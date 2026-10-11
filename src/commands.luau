@@ -1,0 +1,315 @@
+--!strict
+--!native
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+--[[
+@openmw-import-morrowind/commands: dream-ini 1.0.1's command as a function, for a command line or
+a window to call.
+
+  import(request) -> result
+
+`import` does what dream-ini's command does between reading its arguments and printing: it checks
+that the INI is there, notes a cfg that isn't, decides where the result goes, runs the import over
+the two files, and produces the openmw.cfg's text with the writer that destination calls for,
+writing it unless the run is a preview or a dry run. It prints nothing and logs nothing: what the
+command printed as it went (the events, the warnings, the failure) is in the result, in the order
+it happened.
+
+Where the result goes decides how it is written, as in the original:
+
+  no `cfg`                      `new`: the imported settings as a new openmw.cfg, sorted by key,
+                                ending in openmw-config's serializer stamp
+  `cfg`, and a preview or a     `preserved`: the cfg's own lines, comments and order kept, with
+  file in the cfg's folder      only the imported keys changed
+  `cfg`, and a file elsewhere   `resolved`: the cfg's whole chain flattened, every folder spelled
+                                as the path it resolves to, since a relative one would mean
+                                something else from the new folder
+
+A relative `dataDirs` entry is searched from the folder of the file the result goes to, else from
+the cfg's, and written as given. With neither it is searched from the working directory and
+written as the path it resolved to, as it also is when the result is `resolved`.
+
+Nothing is backed up, as nothing is by the original: a file is written through a temporary file
+beside it and a rename, so it holds the old text or the new, and a failure leaves the old.
+
+The original asks the platform what a cfg's path tokens stand for: `?userconfig?` and
+`?userdata?` (OpenMW's own folders for the user, from the home directory), `?local?` (the folder of
+the dream-ini program), and `?global?` (the system's shared data folder). Nothing here asks: the
+request names each root in `tokens`, and a cfg that uses a token whose root isn't named fails the
+import, saying which.
+
+The original has no flag for a dry run, since its preview is one. `dryRun` is the same for a
+request that names a file: everything but the write, with the text in the result.
+
+A request that can't be read raises: a field of the wrong type, a field this doesn't know, no
+`ini`, `output` with `inPlace`, `inPlace` without `cfg`. Everything else comes back as a result,
+its `outcome` saying how the run ended.
+]]
+
+local document = require '@dream-ini'
+local importer = require './ini/importer'
+local log = require '@jess/log'
+local options = require '@dream-ini/options'
+local parser = require '@dream-ini/parser'
+local roots = require './ini/tokens'
+local storage = require './ini/storage'
+local types = require './ini/types'
+local writers = require './ini/writers'
+
+export type Request = {
+  --- The Morrowind.ini to import.
+  ini: string,
+  --- The openmw.cfg to start from. Without one the import starts from an empty cfg; one that is
+  --- named and isn't there is an empty cfg too, and the result says so.
+  cfg: string?,
+  --- The file to write the result to. Not with `inPlace`.
+  output: string?,
+  --- Write the result back to `cfg`, which it needs. Not with `output`.
+  inPlace: boolean?,
+  --- Do everything but write.
+  dryRun: boolean?,
+  --- What the cfg's path tokens stand for: `localPath` for `?local?`, `globalPath` for
+  --- `?global?`, `userConfig` for `?userconfig?`, and `userData` for `?userdata?`.
+  tokens: types.Tokens?,
+  --- Import the INI's `.esm` and `.esp` entries as the `content=` list. Off unless set.
+  gameFiles: boolean?,
+  --- Import the three bitmap font settings. Off unless set.
+  fonts: boolean?,
+  --- Import the INI's archives as the `fallback-archive=` list. On unless turned off.
+  archives: boolean?,
+  --- `win1250`, `win1251`, or `win1252`: decodes the INI and is written as `encoding=`. By
+  --- default the cfg's, else `win1252`.
+  encoding: string?,
+  --- Folders to search for content files and archives before any other. The original's command
+  --- line names one.
+  dataDirs: { string }?,
+  --- `data-local=`, `resources=`, and `user-data=` for the result, each replacing what the cfg
+  --- had and written as given. None is searched for files.
+  dataLocal: string?,
+  resources: string?,
+  userData: string?,
+  --- Also report each content file found, with its modification time, and each archive.
+  verbose: boolean?,
+}
+
+--- Where a run that failed stopped: reading the request's `encoding`, importing, or producing and
+--- writing the openmw.cfg. `message` is the reason, as dream-ini words it.
+export type Failure = { stage: 'options' | 'import' | 'output', message: string }
+
+--- How the openmw.cfg's text was produced; the module's header says when each is used.
+export type Writer = 'new' | 'preserved' | 'resolved'
+
+export type Result = {
+  --- How the run ended: `written` when a file was, `previewed` when the import ran and nothing
+  --- was to be written (no file named, or a dry run), `missingIni` when the INI isn't there, and
+  --- `failed` when it stopped at `failure`. Nothing is written by a run that failed.
+  outcome: 'written' | 'previewed' | 'missingIni' | 'failed',
+  ini: string,
+  cfg: string?,
+  --- Whether `cfg` was named and isn't there.
+  cfgMissing: boolean,
+  --- The file the result is for: `output`, or `cfg` in place. Nil for a preview.
+  target: string?,
+  dryRun: boolean,
+  --- What the import reported as it went, in order: the files it resolved (with `verbose`) and
+  --- the data folders it added. Empty unless the import ran.
+  events: { types.Event },
+  --- The INI lines that were ignored and the content file the load order stopped at, in order.
+  --- Empty unless the import ran.
+  warnings: { types.Warning },
+  --- The cfg keys the import set, sorted. Empty unless the import ran.
+  changedKeys: { string },
+  --- The cfg's settings after the import, each key's values in order: the cfg's chain with its
+  --- folders resolved, and the imported keys. Nil unless the import ran.
+  imported: types.MultiMap?,
+  writer: Writer?,
+  --- The openmw.cfg as it was written, or as it would be. Nil when the run didn't get that far.
+  text: string?,
+  --- The file that was written, as the filesystem names it. Nil when nothing was.
+  written: string?,
+  failure: Failure?,
+}
+
+type Stage = 'options' | 'import' | 'output'
+
+--- A writer's write of the text it produced.
+type Save = (path: string) -> ()
+
+local Context = 'commands.import'
+
+local Spec: options.Spec = {
+  ini = 'string',
+  cfg = 'string',
+  output = 'string',
+  inPlace = 'boolean',
+  dryRun = 'boolean',
+  gameFiles = 'boolean',
+  fonts = 'boolean',
+  archives = 'boolean',
+  encoding = 'string',
+  dataDirs = 'paths',
+  dataLocal = 'string',
+  resources = 'string',
+  userData = 'string',
+  verbose = 'boolean',
+}
+table.freeze(Spec)
+
+--- What the library's Luau API puts in front of dream-ini's own error messages.
+local Prefix = 'dream.ini: '
+
+--- The script position Luau puts in front of a failed assertion's message.
+local Position = '^%S+%.luau:%d+: '
+
+--- The folder a cfg's relative paths are read from: its own, or the working directory for a bare
+--- name (`cfg_parent`).
+local function contextOf(path: string): string
+  local parent = jess.fs.parent(path)
+  return if parent and parent ~= '' then parent else '.'
+end
+
+--- Whether two cfg files read their relative paths from one folder (`same_cfg_context`).
+local function sameContext(left: string, right: string): boolean
+  return storage.canonical(contextOf(left)) == storage.canonical(contextOf(right))
+end
+
+--- What a raised error says, as dream-ini's command words it.
+local function reason(problem: unknown): string
+  local message = string.gsub(tostring(problem), Position, '')
+  if string.sub(message, 1, #Prefix) == Prefix then return string.sub(message, #Prefix + 1) end
+
+  return message
+end
+
+local function failed(result: Result, stage: Stage, message: string): Result
+  result.outcome, result.failure = 'failed', { stage = stage, message = message }
+  return result
+end
+
+--- The openmw.cfg's text from the writer the destination calls for, and that writer's write.
+local function compose(
+  result: Result,
+  imported: types.Result,
+  update: types.Update,
+  relocated: boolean,
+  tokens: types.Tokens?
+): (Writer, string, Save)
+  local cfgPath = result.cfg
+
+  if not cfgPath then
+    return 'new',
+      writers.renderCfg(imported.cfg, result.target or ''),
+      function(path: string) writers.saveCfg(imported.cfg, path) end
+  end
+
+  local loaded = writers.loadDocument(cfgPath, { tokens = tokens })
+  writers.applyUpdate(loaded, imported, update)
+
+  if relocated then
+    return 'resolved',
+      writers.renderResolvedDocument(loaded),
+      function(path: string) writers.saveResolvedDocument(loaded, path) end
+  end
+
+  return 'preserved',
+    document.renderDocument(loaded),
+    function(path: string) document.saveDocument(loaded, path) end
+end
+
+--- The text into the result, and into the file unless the run is a preview or a dry run.
+local function finish(
+  result: Result,
+  imported: types.Result,
+  update: types.Update,
+  relocated: boolean,
+  tokens: types.Tokens?
+)
+  local writer, text, save = compose(result, imported, update, relocated, tokens)
+  result.writer, result.text, result.outcome = writer, text, 'previewed'
+  local target = result.target
+  if not target or result.dryRun then return end
+
+  save(target)
+  result.written, result.outcome = storage.canonical(target), 'written'
+end
+
+local function import(given: Request): Result
+  local rest, tokens = roots.take(Context, given)
+  local read = options.read(Context, rest, Spec, { 'ini' })
+  local iniPath, cfgPath, output = read.ini :: string, read.cfg :: string?, read.output :: string?
+  local inPlace = read.inPlace :: boolean?
+
+  if output and inPlace then
+    error(`{Context}: output and inPlace both say where the result goes: give one`, 0)
+  end
+
+  if inPlace and not cfgPath then
+    error(`{Context}: inPlace writes the result back to cfg, which wasn't given`, 0)
+  end
+
+  local target = output or (if inPlace then cfgPath else nil)
+  local result: Result = {
+    outcome = 'missingIni',
+    ini = iniPath,
+    cfg = cfgPath,
+    cfgMissing = false,
+    target = target,
+    dryRun = (read.dryRun :: boolean?) or false,
+    events = {},
+    warnings = {},
+    changedKeys = {},
+  }
+
+  if not jess.fs.exists(iniPath) then return result end
+
+  result.cfgMissing = if cfgPath then not jess.fs.exists(cfgPath) else false
+  local encoding = read.encoding :: string?
+
+  if encoding and not parser.encodingLabel(encoding) then
+    return failed(result, 'options', `unsupported encoding: {encoding}`)
+  end
+
+  local anchor = target or cfgPath
+  local relocated = if cfgPath and target then not sameContext(cfgPath, target) else false
+  local paths: types.PathsOptions = {
+    ini = iniPath,
+    cfg = cfgPath,
+    tokens = tokens,
+    gameFiles = read.gameFiles :: boolean?,
+    fonts = read.fonts :: boolean?,
+    archives = read.archives :: boolean?,
+    verbose = read.verbose :: boolean?,
+    encoding = encoding,
+    dataDirs = read.dataDirs :: { string }?,
+    dataLocal = read.dataLocal :: string?,
+    resources = read.resources :: string?,
+    userData = read.userData :: string?,
+    dataDirBase = if anchor then contextOf(anchor) else nil,
+    writeResolvedDataDirs = relocated,
+  }
+  local imported: types.Result?
+
+  -- `importPaths` raises for a file it can't read, a cfg that isn't one, a content or archive
+  -- entry that is a path, and an archive it can't find. It also logs each warning and event it
+  -- returns, which `capture` keeps out of the log: here they are the result's to carry.
+  local ran, problem = pcall(log.capture, function() imported = importer.importPaths(paths) end)
+  if not ran or not imported then return failed(result, 'import', reason(problem)) end
+
+  result.events, result.warnings = imported.events, imported.warnings
+  result.changedKeys, result.imported = imported.changedKeys, imported.cfg
+  local update: types.Update = {
+    gameFiles = paths.gameFiles,
+    archives = paths.archives,
+    dataLocal = paths.dataLocal,
+    resources = paths.resources,
+    userData = paths.userData,
+  }
+
+  -- The cfg is read again, as a document, and raises as the import's read of it does; a setting
+  -- that doesn't fit on a cfg line raises; and so does a write its folder can't take.
+  local finished, failure = pcall(finish, result, imported, update, relocated, tokens)
+  if not finished then return failed(result, 'output', reason(failure)) end
+
+  return result
+end
+
+return table.freeze { import = import }
