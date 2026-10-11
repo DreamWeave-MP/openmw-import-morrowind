@@ -278,6 +278,14 @@ suite.describe('a file with no cfg', function()
     expect(names()).toEqual { 'Morrowind.ini', 'out.cfg' }
   end)
 
+  suite.it('replaces a file that is already there, keeping no backup of it', function()
+    local ini, output = file(Audio, 'Morrowind.ini'), file('stale=1\n', 'out.cfg')
+    local result = commands.import { ini = ini, output = output, archives = false }
+    expect(result.outcome).toBe 'written'
+    expect(jess.fs.read(output)).toBe(`encoding=win1252\nno-sound=1\n{Stamp}`)
+    expect(names()).toEqual { 'Morrowind.ini', 'out.cfg' }
+  end)
+
   suite.it('finds content in Data Files beside the INI, and writes the folder', function()
     local ini, output = file(GameFile, 'Morrowind.ini'), at 'openmw.cfg'
     file(plugin(), 'Data Files', 'Base.esm')
