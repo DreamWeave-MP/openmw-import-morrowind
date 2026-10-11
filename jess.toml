@@ -1,0 +1,22 @@
+manifest_version = 1
+
+[package]
+id = "org.dreamweave.openmw-import-morrowind"
+version = "0.1.0"
+jess_api = "1"
+include = ["src"]
+
+[dependencies]
+"org.dreamweave.dream-ini" = "0.1"
+"org.dreamweave.openmw-config" = "0.1"
+
+[modules]
+"@openmw-import-morrowind" = "src/init.luau"
+
+# The module is inert API: it does nothing until something requires it, and runs with the
+# authority of whatever calls it.
+
+[[layer]]
+id = "openmw-import-morrowind.core"
+requires = ["dream-ini.core", "openmw-config.core"]
+exports = ["@openmw-import-morrowind"]
