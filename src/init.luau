@@ -5,6 +5,7 @@ local importer = require '@self/ini/importer'
 local types = require '@self/ini/types'
 local writers = require '@self/ini/writers'
 
+export type Tokens = types.Tokens
 export type MultiMap = types.MultiMap
 export type Warning = types.Warning
 export type Event = types.Event

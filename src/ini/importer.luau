@@ -7,6 +7,7 @@ local log = require('@jess/log').new 'morrowind.ini'
 local options = require '@dream-ini/options'
 local fs = require '@dream/fs'
 local storage = require './storage'
+local roots = require './tokens'
 type MultiMap = types.MultiMap
 type Result = types.Result
 type Request = types.Request
@@ -239,7 +240,8 @@ local function importMaps(cfg: MultiMap, ini: MultiMap, given: types.MapsOptions
 end
 
 local function importPaths(given: types.PathsOptions): Result
-  local read = options.read('ini.importPaths', given, PathsSpec, { 'ini' })
+  local rest, tokens = roots.take('ini.importPaths', given)
+  local read = options.read('ini.importPaths', rest, PathsSpec, { 'ini' })
   local import = readImport('ini.importPaths', read)
   local iniPath, cfgPath = read.ini :: string, read.cfg :: string?
   local cfgDir = if cfgPath then jess.fs.parent(cfgPath) or '' else nil
@@ -248,7 +250,7 @@ local function importPaths(given: types.PathsOptions): Result
   local dataDirBase = (read.dataDirBase :: string?)
     or (if #import.dataDirs > 0 then cfgDir or import.cfgDir else nil)
   local writeResolved = read.writeResolvedDataDirs :: boolean?
-  local cfg = if cfgPath then config.load(cfgPath) else {}
+  local cfg = if cfgPath then config.load(cfgPath, { tokens = tokens }) else {}
   local encoding = cfgEncoding(cfg, import.encoding)
   local text, message = fs.readFileString(iniPath)
 

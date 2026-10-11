@@ -116,6 +116,21 @@ suite.describe('importPaths', function()
       'relative-data',
     }
   end)
+
+  suite.it('reads a cfg\'s path tokens from the roots it is given, and refuses one without', function()
+    local cfgPath = jess.fs.join(root, 'openmw.cfg')
+    jess.fs.write(cfgPath, 'data="?userdata?/relative-data"\n')
+    local result = import { cfg = cfgPath, dataDirs = {}, tokens = { userData = context } }
+    expect(result.cfg.content).toEqual { 'Base.esm' }
+    expect(result.cfg.data).toEqual { dataFiles }
+    expect(result.events).toEqual {}
+
+    expect(function() import { cfg = cfgPath, dataDirs = {} } end).toThrow 'token \'?userdata?\' needs an explicit \'userData\' root'
+    expect(function() import { cfg = cfgPath, tokens = { userConfig = context } } end).toThrow 'token \'?userdata?\' needs an explicit \'userData\' root'
+    expect(function() import { tokens = { home = context } } end).toThrow 'ini.importPaths.tokens: unknown path token \'home\'; known tokens are globalPath, localPath, userConfig, userData'
+    expect(function() import { tokens = { userData = 1 } } end).toThrow 'ini.importPaths.tokens.userData: expected string, got number'
+    expect(function() import { tokens = context } end).toThrow 'ini.importPaths.tokens: expected a table of path roots, got string'
+  end)
 end)
 
 suite.describe('documents and writers', function()

@@ -1,8 +1,13 @@
 --!strict
 --!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+local configuration = require '@openmw-config'
 local ini = require '@dream-ini'
 
+--- What a cfg's path tokens stand for, each root named by the caller: `localPath` for `?local?`,
+--- `globalPath` for `?global?`, `userConfig` for `?userconfig?`, and `userData` for `?userdata?`.
+--- dream-ini asks the platform; a cfg that uses a token whose root isn't given can't be read.
+export type Tokens = configuration.Tokens
 export type MultiMap = ini.MultiMap
 export type Warning = ini.Warning
 export type Event = { kind: string, path: string, modified: number? }
@@ -26,13 +31,15 @@ export type ImportOptions = {
 --- default `Data Files` folder.
 export type MapsOptions = ImportOptions & { iniPath: string? }
 
---- `importPaths`' options: the shared ones, the files to read, and the two dream-ini's command
---- sets on its `ImportOptions` for a result that is going to a file: `dataDirBase`, the folder a
---- relative `dataDirs` entry is searched from instead of the cfg's, and `writeResolvedDataDirs`,
---- which writes each `dataDirs` entry as the folder it resolved to instead of as it was given.
+--- `importPaths`' options: the shared ones, the files to read, the roots of the path tokens the
+--- cfg uses, and the two dream-ini's command sets on its `ImportOptions` for a result that is
+--- going to a file: `dataDirBase`, the folder a relative `dataDirs` entry is searched from instead
+--- of the cfg's, and `writeResolvedDataDirs`, which writes each `dataDirs` entry as the folder it
+--- resolved to instead of as it was given.
 export type PathsOptions = ImportOptions & {
   ini: string,
   cfg: string?,
+  tokens: Tokens?,
   dataDirBase: string?,
   writeResolvedDataDirs: boolean?,
 }
