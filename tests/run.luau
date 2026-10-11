@@ -1,6 +1,7 @@
 --!strict
 --!native
 -- The package's own cases: the edge semantics dream-ini pins, checked on the port alone.
+local fs = require '@dream/fs'
 local ini = require '@openmw-import-morrowind'
 local text = require '@dream-ini'
 local test = require '@jess/test'
@@ -65,6 +66,55 @@ suite.describe('importMaps', function()
     expect(function() ini.importMaps({}, {}, { verbose = 'yes' } :: any) end).toThrow 'expected boolean'
     expect(function() ini.importMaps({ data = 'not a list' } :: any, {}, {}) end).toThrow 'ini.importMaps: expected array of strings for key \'data\', got string'
     expect(function() ini.importMaps({}, {}, { writeResolvedDataDirs = true } :: any) end).toThrow 'unknown option \'writeResolvedDataDirs\''
+  end)
+end)
+
+suite.describe('importPaths', function()
+  local root = jess.fs.join(scratch, 'openmw-import-morrowind-paths')
+  local iniPath = jess.fs.join(root, 'Morrowind.ini')
+  local context = jess.fs.join(root, 'context')
+  local dataFiles = jess.fs.join(context, 'relative-data')
+
+  suite.beforeEach(function()
+    fs.remove(root, { recursive = true })
+    jess.fs.write(iniPath, '[Game Files]\nGameFile0=Base.esm\n')
+    jess.fs.write(jess.fs.join(dataFiles, 'Base.esm'), 'TES3')
+  end)
+
+  local function import(extra: { [string]: unknown }): ini.Result
+    local given: { [string]: unknown } =
+      { ini = iniPath, gameFiles = true, archives = false, dataDirs = { 'relative-data' } }
+
+    for key, value in extra do
+      given[key] = value
+    end
+
+    return ini.importPaths((given :: unknown) :: ini.PathsOptions)
+  end
+
+  suite.it('searches a relative data folder from dataDirBase, and writes it as given', function()
+    local result = import { dataDirBase = context }
+    expect(result.cfg.content).toEqual { 'Base.esm' }
+    expect(result.cfg.data).toEqual { 'relative-data' }
+    expect(result.events).toEqual {
+      { kind = 'dataDirAddedForContent', path = fs.canonicalize(dataFiles) },
+    }
+  end)
+
+  suite.it('takes dataDirBase over the cfg\'s folder', function()
+    local cfgPath = jess.fs.join(root, 'elsewhere', 'openmw.cfg')
+    jess.fs.write(cfgPath, 'encoding=win1252\n')
+    expect(import({ cfg = cfgPath }).warnings[1].kind).toBe 'missingGameFile'
+    expect(import({ cfg = cfgPath, dataDirBase = context }).cfg.content).toEqual { 'Base.esm' }
+  end)
+
+  suite.it('writes a data folder as it resolved with writeResolvedDataDirs', function()
+    local result = import { dataDirBase = context, writeResolvedDataDirs = true }
+    expect(result.cfg.content).toEqual { 'Base.esm' }
+    expect(result.cfg.data).toEqual { fs.canonicalize(dataFiles) }
+    expect(import({ dataDirBase = context, writeResolvedDataDirs = false }).cfg.data).toEqual {
+      'relative-data',
+    }
   end)
 end)
 

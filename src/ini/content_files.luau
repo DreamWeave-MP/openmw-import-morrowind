@@ -102,7 +102,8 @@ local function searchPaths(request: Request): { Search }
   for _, directory in request.dataDirs do
     local path = storage.canonical(storage.resolve(directory, base))
     -- With no base, a relative folder is written as resolved, since the cfg can't resolve it.
-    local value = if not base and storage.isRelative(directory) then path else directory
+    local resolved = request.writeResolvedDataDirs or (not base and storage.isRelative(directory))
+    local value = if resolved then path else directory
     add(path, value, 'explicit')
   end
 

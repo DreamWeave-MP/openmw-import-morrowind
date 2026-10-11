@@ -49,7 +49,13 @@ local function spec(extra: options.Spec): options.Spec
   return table.freeze(result)
 end
 
-local MapsSpec, PathsSpec = spec { iniPath = 'string' }, spec { ini = 'string', cfg = 'string' }
+local MapsSpec = spec { iniPath = 'string' }
+local PathsSpec = spec {
+  ini = 'string',
+  cfg = 'string',
+  dataDirBase = 'string',
+  writeResolvedDataDirs = 'boolean',
+}
 
 --- Each fallback key as the cfg spells it (`Weather_Sunrise_Time`), and whether it's a font.
 local Translated: { [string]: string }, FontKeys: { [string]: boolean } = {}, {}
@@ -118,7 +124,8 @@ local function run(
   import: Import,
   iniPath: string,
   cfgDir: string?,
-  dataDirBase: string?
+  dataDirBase: string?,
+  writeResolvedDataDirs: boolean?
 ): Result
   local encoding = cfgEncoding(cfg, import.encoding)
   local changed: { [string]: boolean } = {}
@@ -160,6 +167,7 @@ local function run(
     cfgDir = cfgDir,
     dataDirs = import.dataDirs,
     dataDirBase = dataDirBase,
+    writeResolvedDataDirs = writeResolvedDataDirs,
     verbose = import.verbose,
   }
 
@@ -235,8 +243,11 @@ local function importPaths(given: types.PathsOptions): Result
   local import = readImport('ini.importPaths', read)
   local iniPath, cfgPath = read.ini :: string, read.cfg :: string?
   local cfgDir = if cfgPath then jess.fs.parent(cfgPath) or '' else nil
-  -- Relative data folders resolve from the cfg's folder when there is a cfg.
-  local dataDirBase = if #import.dataDirs > 0 then cfgDir or import.cfgDir else nil
+  -- Relative data folders resolve from the folder the caller names, else from the cfg's folder
+  -- when there is a cfg.
+  local dataDirBase = (read.dataDirBase :: string?)
+    or (if #import.dataDirs > 0 then cfgDir or import.cfgDir else nil)
+  local writeResolved = read.writeResolvedDataDirs :: boolean?
   local cfg = if cfgPath then config.load(cfgPath) else {}
   local encoding = cfgEncoding(cfg, import.encoding)
   local text, message = fs.readFileString(iniPath)
@@ -246,7 +257,7 @@ local function importPaths(given: types.PathsOptions): Result
   end
 
   local parsed = parser.parseIni(text, { encoding = encoding })
-  local result = run(cfg, parsed.entries, import, iniPath, cfgDir, dataDirBase)
+  local result = run(cfg, parsed.entries, import, iniPath, cfgDir, dataDirBase, writeResolved)
 
   for index = #parsed.warnings, 1, -1 do
     table.insert(result.warnings, 1, parsed.warnings[index])

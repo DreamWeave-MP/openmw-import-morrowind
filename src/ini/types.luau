@@ -26,8 +26,16 @@ export type ImportOptions = {
 --- default `Data Files` folder.
 export type MapsOptions = ImportOptions & { iniPath: string? }
 
---- `importPaths`' options: the shared ones and the files to read.
-export type PathsOptions = ImportOptions & { ini: string, cfg: string? }
+--- `importPaths`' options: the shared ones, the files to read, and the two dream-ini's command
+--- sets on its `ImportOptions` for a result that is going to a file: `dataDirBase`, the folder a
+--- relative `dataDirs` entry is searched from instead of the cfg's, and `writeResolvedDataDirs`,
+--- which writes each `dataDirs` entry as the folder it resolved to instead of as it was given.
+export type PathsOptions = ImportOptions & {
+  ini: string,
+  cfg: string?,
+  dataDirBase: string?,
+  writeResolvedDataDirs: boolean?,
+}
 
 --- What a preserved openmw.cfg takes from an import besides its changed keys, as dream-ini's
 --- `PreservedCfgUpdate` carries it: whether the content and archive lists were imported, and the
@@ -56,6 +64,7 @@ export type Request = {
   cfgDir: string?,
   dataDirs: { string },
   dataDirBase: string?,
+  writeResolvedDataDirs: boolean?,
   verbose: boolean,
 }
 
