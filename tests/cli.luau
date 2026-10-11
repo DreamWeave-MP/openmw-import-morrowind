@@ -1,0 +1,627 @@
+--!strict
+--!native
+-- `@openmw-import-morrowind/cli`: each of dream-ini 1.0.1's flags onto the request field it stands
+-- for, the argument lists it refuses and why, what a result prints and to which stream, the exit
+-- status of each outcome, and whole runs. The parse cases are the original's own (`src/cli.rs`);
+-- the run cases print to the suite's own streams.
+local cli = require '@openmw-import-morrowind/cli'
+local commands = require '@openmw-import-morrowind/commands'
+local fs = require '@dream/fs'
+local test = require '@jess/test'
+
+local expect = test.expect
+local suite = test.new()
+local scratch = assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
+local root = jess.fs.join(scratch, 'openmw-import-morrowind-cli')
+
+type Fields = { [string]: unknown }
+
+local Audio = '[General]\nDisable Audio=1\n'
+
+-- Every flag under each of its spellings, with `--ini` beside it, and the request it comes to.
+local Read: { { argv: { string }, request: Fields } } = {
+  { argv = {}, request = {} },
+  { argv = { '--cfg', 'openmw.cfg' }, request = { cfg = 'openmw.cfg' } },
+  { argv = { '-c', 'openmw.cfg' }, request = { cfg = 'openmw.cfg' } },
+  { argv = { '--cfg=my cfg/openmw.cfg' }, request = { cfg = 'my cfg/openmw.cfg' } },
+  { argv = { '--data', 'Data Files' }, request = { dataDirs = { 'Data Files' } } },
+  { argv = { '-d', 'Data Files' }, request = { dataDirs = { 'Data Files' } } },
+  { argv = { '--encoding', 'win1251' }, request = { encoding = 'win1251' } },
+  { argv = { '-e', 'win1251' }, request = { encoding = 'win1251' } },
+  { argv = { '--encoding=' }, request = { encoding = '' } },
+  { argv = { '--fonts' }, request = { fonts = true } },
+  { argv = { '-f' }, request = { fonts = true } },
+  { argv = { '--game-files' }, request = { gameFiles = true } },
+  { argv = { '-g' }, request = { gameFiles = true } },
+  { argv = { '--data-local', 'local-data' }, request = { dataLocal = 'local-data' } },
+  { argv = { '-l', 'local-data' }, request = { dataLocal = 'local-data' } },
+  { argv = { '--no-archives' }, request = { archives = false } },
+  { argv = { '-n' }, request = { archives = false } },
+  { argv = { '--output', 'out.cfg' }, request = { output = 'out.cfg' } },
+  { argv = { '-o', 'out.cfg' }, request = { output = 'out.cfg' } },
+  { argv = { '--resources', 'resources' }, request = { resources = 'resources' } },
+  { argv = { '-r', 'resources' }, request = { resources = 'resources' } },
+  { argv = { '--user-data', 'user-data' }, request = { userData = 'user-data' } },
+  { argv = { '-u', 'user-data' }, request = { userData = 'user-data' } },
+  { argv = { '--verbose' }, request = { verbose = true } },
+  { argv = { '-v' }, request = { verbose = true } },
+  {
+    argv = { '--cfg', 'openmw.cfg', '--in-place' },
+    request = { cfg = 'openmw.cfg', inPlace = true },
+  },
+  { argv = { '-c', 'openmw.cfg', '-w' }, request = { cfg = 'openmw.cfg', inPlace = true } },
+  -- A value attached to its flag, and one that is a lone dash, are taken as they are.
+  { argv = { '-oout.cfg' }, request = { output = 'out.cfg' } },
+  { argv = { '-o=out.cfg' }, request = { output = 'out.cfg' } },
+  { argv = { '--output=-out.cfg' }, request = { output = '-out.cfg' } },
+  { argv = { '-o-out.cfg' }, request = { output = '-out.cfg' } },
+  { argv = { '--output', '-' }, request = { output = '-' } },
+  { argv = { '--output=a=b' }, request = { output = 'a=b' } },
+  -- Flags that take no value share a dash, and the last can take one, attached or not.
+  {
+    argv = { '-gfnv' },
+    request = { gameFiles = true, fonts = true, archives = false, verbose = true },
+  },
+  {
+    argv = { '-gno', 'out.cfg' },
+    request = { gameFiles = true, archives = false, output = 'out.cfg' },
+  },
+  { argv = { '-gdData' }, request = { gameFiles = true, dataDirs = { 'Data' } } },
+  { argv = { '--' }, request = {} },
+  -- The four roots this package asks for, which the original takes from the platform.
+  {
+    argv = { '--token-userconfig', '/cfg', '--token-userdata=/data' },
+    request = { tokens = { userConfig = '/cfg', userData = '/data' } },
+  },
+  {
+    argv = { '--token-local', '/opt/openmw', '--token-global', '/usr/share/games' },
+    request = { tokens = { localPath = '/opt/openmw', globalPath = '/usr/share/games' } },
+  },
+  {
+    argv = { '--user-data', 'saves', '--token-userdata', '/data' },
+    request = { userData = 'saves', tokens = { userData = '/data' } },
+  },
+}
+
+-- Each argument list `parse` refuses, and what it says of it.
+local Refused: { { argv: { string }, message: string } } = {
+  {
+    argv = {},
+    message = 'an import needs --ini <FILE>: given no arguments the original opens its window, which is not part of this package',
+  },
+  -- The original's own refusals (`src/cli.rs`).
+  {
+    argv = { 'Morrowind.ini', 'openmw.cfg' },
+    message = 'unexpected argument \'Morrowind.ini\': paths are given with --ini and --cfg, never by position',
+  },
+  { argv = { '--output', 'openmw.cfg' }, message = '--ini <FILE> is required for imports' },
+  { argv = { '--ini', 'Morrowind.ini', '--in-place' }, message = '--in-place requires --cfg <FILE>' },
+  { argv = { '--ini', 'Morrowind.ini', '-w' }, message = '--in-place requires --cfg <FILE>' },
+  {
+    argv = { '--ini', 'Morrowind.ini', '--cfg', 'openmw.cfg', '--in-place', '--output', 'out.cfg' },
+    message = '--output and --in-place are mutually exclusive',
+  },
+  {
+    argv = { '--ini', 'Morrowind.ini', '--cfg', 'openmw.cfg', '--output', 'out.cfg', '--in-place' },
+    message = '--output and --in-place are mutually exclusive',
+  },
+  { argv = { '--output', 'out.cfg', '-w' }, message = '--output and --in-place are mutually exclusive' },
+  {
+    argv = { '--ini', 'Morrowind.ini', '--data', 'Data Files', '--data', 'Other Data' },
+    message = '--data can be given only once',
+  },
+  { argv = { '--ini', 'Morrowind.ini', '-A' }, message = 'unknown option \'-A\'' },
+  {
+    argv = { '--ini', 'Morrowind.ini', '--userdata', 'user-data' },
+    message = 'unknown option \'--userdata\'',
+  },
+  -- What the original has and this package doesn't, each by name.
+  {
+    argv = { '--generate-completion', 'bash' },
+    message = '--generate-completion is not part of this package: it has no shell completion scripts to generate',
+  },
+  {
+    argv = { '-C', 'bash' },
+    message = '-C is not part of this package: it has no shell completion scripts to generate',
+  },
+  {
+    argv = { '--generate-manpage' },
+    message = '--generate-manpage is not part of this package: it has no manpage to generate',
+  },
+  { argv = { '-M' }, message = '-M is not part of this package: it has no manpage to generate' },
+  {
+    argv = { '--generate-manpage', '--ini', 'Morrowind.ini', '--cfg', 'openmw.cfg' },
+    message = '--generate-manpage is not part of this package: it has no manpage to generate',
+  },
+  {
+    argv = { 'install-launcher' },
+    message = 'install-launcher is not part of this package: it adds the original\'s window to the desktop\'s menu, and the window is not here',
+  },
+  {
+    argv = { '--ini', 'Morrowind.ini', 'install-launcher' },
+    message = 'install-launcher is not part of this package: it adds the original\'s window to the desktop\'s menu, and the window is not here',
+  },
+  {
+    argv = { 'help', 'install-launcher' },
+    message = 'install-launcher is not part of this package: it adds the original\'s window to the desktop\'s menu, and the window is not here',
+  },
+  -- The command line's own rules.
+  { argv = { '--bogus' }, message = 'unknown option \'--bogus\'' },
+  { argv = { '--bogus=1' }, message = 'unknown option \'--bogus\'' },
+  { argv = { '--Ini', 'Morrowind.ini' }, message = 'unknown option \'--Ini\'' },
+  { argv = { '--dry-run' }, message = 'unknown option \'--dry-run\'' },
+  { argv = { '--data-home', 'share' }, message = 'unknown option \'--data-home\'' },
+  { argv = { '-gx' }, message = 'unknown option \'-x\'' },
+  { argv = { '--ini' }, message = '--ini requires a value' },
+  { argv = { '-i' }, message = '-i requires a value' },
+  { argv = { '--ini=' }, message = '--ini requires a value' },
+  { argv = { '--ini', '--cfg', 'openmw.cfg' }, message = '--ini requires a value' },
+  { argv = { '--ini', '-x' }, message = '--ini requires a value' },
+  { argv = { '--ini', 'Morrowind.ini', '--encoding' }, message = '--encoding requires a value' },
+  { argv = { '--ini', 'Morrowind.ini', '--token-userdata' }, message = '--token-userdata requires a value' },
+  { argv = { '--verbose=true' }, message = '--verbose takes no value' },
+  { argv = { '--no-archives=false' }, message = '--no-archives takes no value' },
+  { argv = { '--ini', 'a.ini', '-i', 'b.ini' }, message = '-i can be given only once' },
+  { argv = { '-v', '--verbose' }, message = '--verbose can be given only once' },
+  { argv = { '-vv' }, message = '-v can be given only once' },
+  {
+    argv = { '--ini', 'Morrowind.ini', 'help' },
+    message = 'unexpected argument \'help\': paths are given with --ini and --cfg, never by position',
+  },
+  {
+    argv = { 'help', 'import' },
+    message = 'unexpected argument \'import\': paths are given with --ini and --cfg, never by position',
+  },
+  {
+    argv = { '--ini', 'Morrowind.ini', '--', '--verbose' },
+    message = 'unexpected argument \'--verbose\': paths are given with --ini and --cfg, never by position',
+  },
+  {
+    argv = { '--ini', 'Morrowind.ini', '-' },
+    message = 'unexpected argument \'-\': paths are given with --ini and --cfg, never by position',
+  },
+}
+
+--- A path under the case's folder.
+local function at(...: string): string return jess.fs.join(root, ...) end
+
+--- A file under the case's folder, its folders made, and its path.
+local function file(text: string, ...: string): string
+  local path = at(...)
+  jess.fs.write(path, text)
+  return path
+end
+
+--- A result as `commands.import` returns one for a run that imported, with `fields` over it.
+local function result(fields: Fields): commands.Result
+  local built: Fields = {
+    outcome = 'previewed',
+    ini = 'Morrowind.ini',
+    cfgMissing = false,
+    dryRun = false,
+    events = {},
+    warnings = {},
+    changedKeys = {},
+  }
+
+  for key, value in fields do
+    built[key] = value
+  end
+
+  return (built :: unknown) :: commands.Result
+end
+
+local MissingGameFile = {
+  kind = 'missingGameFile',
+  file = 'Missing.esp',
+  message = 'GameFile entry not found: Missing.esp. Later GameFile entries were not imported.',
+}
+
+-- A run that wrote a file over a cfg that wasn't there, with everything a verbose import reports.
+local Written = result {
+  outcome = 'written',
+  cfg = 'openmw.cfg',
+  cfgMissing = true,
+  target = 'out.cfg',
+  events = {
+    { kind = 'contentFileResolved', path = '/games/Data Files/Base.esm', modified = 1700000000 },
+    { kind = 'dataDirAddedForContent', path = '/games/Data Files' },
+    { kind = 'archiveResolved', path = '/games/Data Files/Morrowind.bsa' },
+    { kind = 'dataDirAddedForArchive', path = '/mods/Archives' },
+  },
+  warnings = {
+    {
+      kind = 'malformedIniLine',
+      line = '[Broken',
+      message = 'ini file wrongly formatted ([Broken). Line ignored.',
+    },
+    MissingGameFile,
+  },
+  writer = 'preserved',
+  text = 'content=Base.esm\n',
+  written = '/games/out.cfg',
+}
+
+suite.beforeEach(function()
+  fs.remove(root, { recursive = true })
+  jess.fs.createDir(root)
+end)
+
+suite.describe('parse', function()
+  suite.it('reads every flag, under each spelling, onto its request field', function()
+    for _, case in Read do
+      local argv = { '--ini', 'Morrowind.ini', table.unpack(case.argv) }
+      local request = table.clone(case.request)
+      request.ini = 'Morrowind.ini'
+      local command, message = cli.parse(argv)
+      expect(message).toBeNil()
+      expect(command).toEqual { command = 'import', request = request }
+    end
+  end)
+
+  suite.it('reads the original\'s own argument lists as it does', function()
+    expect(cli.parse { '--ini', 'mw.ini', '--cfg', 'openmw.cfg' }).toEqual {
+      command = 'import',
+      request = { ini = 'mw.ini', cfg = 'openmw.cfg' },
+    }
+
+    expect(cli.parse {
+      '--game-files',
+      '--fonts',
+      '-n',
+      '--encoding',
+      'win1251',
+      '-d',
+      'Data Files',
+      '-l',
+      'local-data',
+      '-r',
+      'resources',
+      '-u',
+      'user-data',
+      '--output',
+      'out.cfg',
+      '--ini',
+      'mw.ini',
+      '--cfg',
+      'openmw.cfg',
+    }).toEqual {
+      command = 'import',
+      request = {
+        gameFiles = true,
+        fonts = true,
+        archives = false,
+        encoding = 'win1251',
+        dataDirs = { 'Data Files' },
+        dataLocal = 'local-data',
+        resources = 'resources',
+        userData = 'user-data',
+        output = 'out.cfg',
+        ini = 'mw.ini',
+        cfg = 'openmw.cfg',
+      },
+    }
+
+    expect(cli.parse { '--ini', 'Morrowind.ini', '--cfg', 'openmw.cfg', '--in-place' }).toEqual {
+      command = 'import',
+      request = { ini = 'Morrowind.ini', cfg = 'openmw.cfg', inPlace = true },
+    }
+
+    expect(cli.parse { '-i', 'Morrowind.ini', '-o', 'out.cfg' }).toEqual {
+      command = 'import',
+      request = { ini = 'Morrowind.ini', output = 'out.cfg' },
+    }
+  end)
+
+  suite.it('reads help and the version wherever they are, before anything after them', function()
+    for _, argv in { { 'help' }, { '--help' }, { '-h' }, { '-gh', '--bogus' }, { '--ini', 'x', '--help', '-w' } } do
+      local command, message = cli.parse(argv)
+      expect(command).toEqual { command = 'help' }
+      expect(message).toBeNil()
+    end
+
+    expect(cli.parse { '--version' }).toEqual { command = 'version' }
+    expect(cli.parse { '-V' }).toEqual { command = 'version' }
+    expect(cli.parse { '-V', '--output' }).toEqual { command = 'version' }
+    expect(select(2, cli.parse { '--bogus', '--help' })).toBe 'unknown option \'--bogus\''
+  end)
+
+  suite.it('refuses what it can\'t read, and says why', function()
+    for _, case in Refused do
+      local command, message = cli.parse(case.argv)
+      expect(command).toBeNil()
+      expect(message).toBe(case.message)
+    end
+  end)
+
+  suite.it('leaves the argument list as it was, and touches no file', function()
+    local argv = { '--ini', at 'Morrowind.ini', '-gno', at 'out.cfg', '--' }
+    local before = table.clone(argv)
+    expect(cli.parse(argv)).toEqual {
+      command = 'import',
+      request = { ini = at 'Morrowind.ini', gameFiles = true, archives = false, output = at 'out.cfg' },
+    }
+    expect(argv).toEqual(before)
+    expect(fs.list(root)).toEqual {}
+  end)
+
+  suite.it('lists the original\'s options in the original\'s order, and what isn\'t here', function()
+    local ordered = {
+      '-c, --cfg',
+      '-d, --data',
+      '-e, --encoding',
+      '-f, --fonts',
+      '-g, --game-files',
+      '-h, --help',
+      '-i, --ini',
+      '-l, --data-local',
+      '-n, --no-archives',
+      '-o, --output',
+      '-r, --resources',
+      '-u, --user-data',
+      '-v, --verbose',
+      '-w, --in-place',
+      '-V, --version',
+      '--token-userconfig',
+      '--token-userdata',
+      '--token-local',
+      '--token-global',
+      '-C, --generate-completion',
+      '-M, --generate-manpage',
+      'install-launcher',
+      'Exit status: 0',
+    }
+    local previous = 0
+
+    for _, option in ordered do
+      local position = string.find(cli.Usage, option, 1, true)
+      expect(position).toBeTruthy()
+      expect((position or 0) > previous).toBe(true)
+      previous = position or 0
+    end
+
+    expect(cli.Usage).toContain 'the original\'s\nprogram is dream-ini'
+    expect(cli.Usage).toContain 'Positional Morrowind.ini/openmw.cfg paths are intentionally unsupported'
+    expect(string.find(cli.Usage, 'openmw-import-morrowind: ', 1, true)).toBe(1)
+  end)
+end)
+
+suite.describe('transcript and render', function()
+  suite.it('keeps a preview\'s standard output to the cfg, and sends the rest to standard error', function()
+    local preview = result {
+      events = { { kind = 'dataDirAddedForArchive', path = '/games/Data Files' } },
+      warnings = {
+        {
+          kind = 'ignoredEmptyValue',
+          key = 'General:Empty',
+          message = 'ignored empty value for key \'General:Empty\'.',
+        },
+      },
+      writer = 'new',
+      text = 'encoding=win1252\nno-sound=1\n',
+    }
+
+    expect(cli.render(preview)).toBe 'encoding=win1252\nno-sound=1\n'
+    expect(cli.render(preview, { stream = 'stdout' })).toBe 'encoding=win1252\nno-sound=1\n'
+    expect(cli.render(preview, { stream = 'stderr' })).toBe 'load ini file: Morrowind.ini\nadding data directory used to resolve fallback archives: /games/Data Files\nWarning: ignored empty value for key \'General:Empty\'.\n'
+    expect(cli.transcript(preview)).toEqual {
+      { stream = 'stderr', text = 'load ini file: Morrowind.ini\n' },
+      {
+        stream = 'stderr',
+        text = 'adding data directory used to resolve fallback archives: /games/Data Files\n',
+      },
+      { stream = 'stderr', text = 'Warning: ignored empty value for key \'General:Empty\'.\n' },
+      { stream = 'stdout', text = 'encoding=win1252\nno-sound=1\n' },
+    }
+  end)
+
+  suite.it('names the cfg a preview loaded, and prints nothing for an empty text', function()
+    local preview = result { cfg = 'my cfg/openmw.cfg', writer = 'preserved', text = '' }
+    expect(cli.render(preview)).toBe ''
+    expect(cli.render(preview, { stream = 'stderr' })).toBe 'load cfg file: my cfg/openmw.cfg\nload ini file: Morrowind.ini\n'
+  end)
+
+  suite.it('prints a written file\'s progress to standard output, in the original\'s order', function()
+    expect(cli.transcript(Written)).toEqual {
+      { stream = 'stderr', text = 'cfg file does not exist\n' },
+      { stream = 'stdout', text = 'load cfg file: openmw.cfg\n' },
+      { stream = 'stdout', text = 'load ini file: Morrowind.ini\n' },
+      {
+        stream = 'stdout',
+        text = 'content file: /games/Data Files/Base.esm timestamp = (1700000000)\n',
+      },
+      {
+        stream = 'stdout',
+        text = 'adding data directory used to resolve content files: /games/Data Files\n',
+      },
+      { stream = 'stdout', text = 'archive: /games/Data Files/Morrowind.bsa\n' },
+      {
+        stream = 'stdout',
+        text = 'adding data directory used to resolve fallback archives: /mods/Archives\n',
+      },
+      { stream = 'stderr', text = 'Warning: ini file wrongly formatted ([Broken). Line ignored.\n' },
+      {
+        stream = 'stderr',
+        text = 'Warning: GameFile entry not found: Missing.esp. Later GameFile entries were not imported.\n',
+      },
+      { stream = 'stdout', text = 'write to: out.cfg\n' },
+    }
+
+    expect(cli.render(Written)).toBe 'load cfg file: openmw.cfg\nload ini file: Morrowind.ini\ncontent file: /games/Data Files/Base.esm timestamp = (1700000000)\nadding data directory used to resolve content files: /games/Data Files\narchive: /games/Data Files/Morrowind.bsa\nadding data directory used to resolve fallback archives: /mods/Archives\nwrite to: out.cfg\n'
+    expect(cli.render(Written, { stream = 'stderr' })).toBe 'cfg file does not exist\nWarning: ini file wrongly formatted ([Broken). Line ignored.\nWarning: GameFile entry not found: Missing.esp. Later GameFile entries were not imported.\n'
+  end)
+
+  suite.it('prints a quiet write as its two lines, and nothing to standard error', function()
+    local written = result { outcome = 'written', target = 'out.cfg', writer = 'new', text = 'x=y\n' }
+    expect(cli.render(written)).toBe 'load ini file: Morrowind.ini\nwrite to: out.cfg\n'
+    expect(cli.render(written, { stream = 'stderr' })).toBe ''
+  end)
+
+  suite.it('prints a dry run as the write it would be, without announcing the file', function()
+    local dry = result { target = 'out.cfg', dryRun = true, writer = 'new', text = 'x=y\n' }
+    expect(cli.render(dry)).toBe 'load ini file: Morrowind.ini\n'
+    expect(cli.render(dry, { stream = 'stderr' })).toBe ''
+  end)
+
+  suite.it('says only that the INI isn\'t there when it isn\'t', function()
+    local missing = result { outcome = 'missingIni', cfg = 'openmw.cfg', target = 'openmw.cfg' }
+    expect(cli.transcript(missing)).toEqual { { stream = 'stderr', text = 'ini file does not exist\n' } }
+    expect(cli.render(missing)).toBe ''
+  end)
+
+  suite.it('prints a failure where the original stopped, after what it had printed by then', function()
+    local options = result {
+      outcome = 'failed',
+      cfg = 'openmw.cfg',
+      cfgMissing = true,
+      target = 'openmw.cfg',
+      failure = { stage = 'options', message = 'unsupported encoding: bogus' },
+    }
+    expect(cli.render(options)).toBe ''
+    expect(cli.render(options, { stream = 'stderr' })).toBe 'cfg file does not exist\nERROR: unsupported encoding: bogus\n'
+
+    local import = result {
+      outcome = 'failed',
+      cfg = 'openmw.cfg',
+      failure = { stage = 'import', message = 'fallback archives not found: Tribunal.bsa' },
+    }
+    expect(cli.render(import)).toBe ''
+    expect(cli.render(import, { stream = 'stderr' })).toBe 'load cfg file: openmw.cfg\nload ini file: Morrowind.ini\nERROR: fallback archives not found: Tribunal.bsa\n'
+
+    local output = result {
+      outcome = 'failed',
+      target = 'nowhere/out.cfg',
+      events = { { kind = 'dataDirAddedForContent', path = '/games/Data Files' } },
+      warnings = { MissingGameFile },
+      writer = 'new',
+      text = 'x=y\n',
+      failure = { stage = 'output', message = 'nowhere/out.cfg: No such file or directory' },
+    }
+
+    expect(cli.transcript(output)).toEqual {
+      { stream = 'stdout', text = 'load ini file: Morrowind.ini\n' },
+      {
+        stream = 'stdout',
+        text = 'adding data directory used to resolve content files: /games/Data Files\n',
+      },
+      {
+        stream = 'stderr',
+        text = 'Warning: GameFile entry not found: Missing.esp. Later GameFile entries were not imported.\n',
+      },
+      { stream = 'stdout', text = 'write to: nowhere/out.cfg\n' },
+      { stream = 'stderr', text = 'ERROR: nowhere/out.cfg: No such file or directory\n' },
+    }
+
+    local preview = result {
+      outcome = 'failed',
+      cfg = 'openmw.cfg',
+      failure = { stage = 'output', message = 'OpenMW config error: invalid line: nonsense' },
+    }
+    expect(cli.render(preview)).toBe ''
+    expect(cli.render(preview, { stream = 'stderr' })).toBe 'load cfg file: openmw.cfg\nload ini file: Morrowind.ini\nERROR: OpenMW config error: invalid line: nonsense\n'
+  end)
+end)
+
+suite.describe('status', function()
+  suite.it(
+    'numbers its exit statuses as the original and Jess\'s other commands do',
+    function() expect(cli.Exit).toEqual { ok = 0, invalidInput = 8, runtime = 9, missingIni = 253 } end
+  )
+
+  suite.it('is the original\'s for each outcome, and Jess\'s for a failure', function()
+    expect(cli.status(result {})).toBe(0)
+    expect(cli.status(result { warnings = { MissingGameFile } })).toBe(0)
+    expect(cli.status(Written)).toBe(0)
+    expect(cli.status(result { target = 'out.cfg', dryRun = true })).toBe(0)
+    expect(cli.status(result { outcome = 'missingIni' })).toBe(253)
+
+    for _, stage in { 'options', 'import', 'output' } do
+      local failed = result { outcome = 'failed', failure = { stage = stage, message = 'no' } }
+      expect(cli.status(failed)).toBe(9)
+    end
+  end)
+end)
+
+suite.describe('run', function()
+  suite.it('returns 0 for help and for the version', function()
+    expect(cli.run { '--help' }).toBe(0)
+    expect(cli.run { '-h' }).toBe(0)
+    expect(cli.run { 'help' }).toBe(0)
+    expect(cli.run { '--version' }).toBe(0)
+    expect(cli.run { '-V' }).toBe(0)
+  end)
+
+  suite.it('returns 8 for every command line parse refuses, and touches nothing', function()
+    for _, case in Refused do
+      expect(cli.run(case.argv)).toBe(8)
+    end
+
+    expect(fs.list(root)).toEqual {}
+  end)
+
+  suite.it('previews to standard output and writes nothing', function()
+    local ini, cfg = file(Audio, 'Morrowind.ini'), file('encoding=win1252\n', 'openmw.cfg')
+    expect(cli.run { '--no-archives', '--ini', ini }).toBe(0)
+    expect(cli.run { '--no-archives', '--ini', ini, '--cfg', cfg }).toBe(0)
+    expect(jess.fs.read(cfg)).toBe 'encoding=win1252\n'
+    expect(fs.list(root)).toEqual { 'Morrowind.ini', 'openmw.cfg' }
+  end)
+
+  suite.it('writes the file --output names, and leaves the cfg alone', function()
+    local ini, cfg, output = file(Audio, 'Morrowind.ini'), file('# kept\ndata=mods\n', 'openmw.cfg'), at 'out.cfg'
+    expect(cli.run { '--no-archives', '--ini', ini, '--cfg', cfg, '--output', output }).toBe(0)
+    expect(jess.fs.read(output)).toBe '# kept\ndata=mods\nencoding=win1252\nno-sound=1\n'
+    expect(jess.fs.read(cfg)).toBe '# kept\ndata=mods\n'
+  end)
+
+  suite.it('writes the cfg back with --in-place, under either spelling', function()
+    local ini, cfg = file(Audio, 'Morrowind.ini'), file('encoding=win1252\n', 'openmw.cfg')
+    expect(cli.run { '-w', '--no-archives', '--ini', ini, '--cfg', cfg }).toBe(0)
+    expect(jess.fs.read(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
+    jess.fs.write(cfg, 'encoding=win1250\n')
+    expect(cli.run { '--in-place', '-n', '-i', ini, '-c', cfg }).toBe(0)
+    expect(jess.fs.read(cfg)).toBe 'encoding=win1250\nno-sound=1\n'
+  end)
+
+  suite.it('imports content and archives with its switches, and sets the folders it is given', function()
+    local ini = file(
+      '[Game Files]\nGameFile0=Base.esm\n[Archives]\nArchive 0=Tribunal.bsa\n[Fonts]\nFont 0=magic\n',
+      'Morrowind.ini'
+    )
+    local output = at 'openmw.cfg'
+    file('TES3', 'Data Files', 'Base.esm')
+    file('', 'Data Files', 'Morrowind.bsa')
+    file('', 'Data Files', 'Tribunal.bsa')
+    local data = assert(fs.canonicalize(at 'Data Files'))
+    expect(cli.run { '-gfv', '-i', ini, '-o', output, '-l', 'local', '-r', 'res', '-u', 'saves', '-e', 'win1250' }).toBe(0)
+    expect(jess.fs.read(output)).toBe(
+      `content=Base.esm\ndata={data}\ndata-local=local\nencoding=win1250\nfallback=Fonts_Font_0,magic\nfallback-archive=Morrowind.bsa\nfallback-archive=Tribunal.bsa\nresources=res\nuser-data=saves\n# OpenMW-Config Serializer Version: 3.0.0\n`
+    )
+  end)
+
+  suite.it('reads a cfg\'s path tokens from the roots the command line names', function()
+    local ini, cfg = file(Audio, 'Morrowind.ini'), file('user-data=?userdata?\n', 'openmw.cfg')
+    expect(cli.run { '-n', '-i', ini, '-c', cfg, '-w' }).toBe(9)
+    expect(jess.fs.read(cfg)).toBe 'user-data=?userdata?\n'
+    expect(cli.run { '-n', '-i', ini, '-c', cfg, '-w', '--token-userdata', at 'user' }).toBe(0)
+    expect(jess.fs.read(cfg)).toBe 'user-data=?userdata?\nencoding=win1252\nno-sound=1\n'
+  end)
+
+  suite.it('returns 253 when the INI isn\'t there, and writes nothing', function()
+    local cfg = at 'openmw.cfg'
+    expect(cli.run { '--ini', at 'missing.ini', '--cfg', cfg, '--in-place' }).toBe(253)
+    expect(cli.run { '--ini', at 'missing.ini', '--encoding', 'bogus' }).toBe(253)
+    expect(fs.list(root)).toEqual {}
+  end)
+
+  suite.it('returns 9 when the import fails, and writes nothing', function()
+    local ini, cfg = file('[Archives]\nArchive 0=Tribunal.bsa\n', 'Morrowind.ini'), file('', 'openmw.cfg')
+    expect(cli.run { '--ini', ini, '--cfg', cfg, '--in-place', '--encoding', 'bogus' }).toBe(9)
+    expect(cli.run { '--ini', ini, '--cfg', cfg, '--in-place' }).toBe(9)
+    expect(cli.run { '--ini', ini, '--output', at('nowhere', 'out.cfg'), '-n' }).toBe(9)
+    expect(jess.fs.read(cfg)).toBe ''
+    expect(fs.list(root)).toEqual { 'Morrowind.ini', 'openmw.cfg' }
+  end)
+end)
+
+return suite

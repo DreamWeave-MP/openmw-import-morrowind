@@ -4,8 +4,9 @@ manifest_version = 1
 id = "org.dreamweave.openmw-import-morrowind"
 version = "0.1.0"
 jess_api = "1"
+default_target = "openmw-import-morrowind"
 include = ["src"]
-tests = ["tests/run.luau", "tests/commands.luau", "tests/style.luau"]
+tests = ["tests/run.luau", "tests/commands.luau", "tests/cli.luau", "tests/style.luau"]
 
 [dependencies]
 "org.dreamweave.dream-ini" = "0.1"
@@ -14,6 +15,7 @@ tests = ["tests/run.luau", "tests/commands.luau", "tests/style.luau"]
 [modules]
 "@openmw-import-morrowind" = "src/init.luau"
 "@openmw-import-morrowind/commands" = "src/commands.luau"
+"@openmw-import-morrowind/cli" = "src/cli.luau"
 
 # Every module here is inert API: it does nothing until something requires it, and runs with the
 # authority of whatever calls it. An import reads the INI, the cfg and the files it includes, and
@@ -23,4 +25,21 @@ tests = ["tests/run.luau", "tests/commands.luau", "tests/style.luau"]
 [[layer]]
 id = "openmw-import-morrowind.core"
 requires = ["dream-ini.core", "openmw-config.core"]
-exports = ["@openmw-import-morrowind", "@openmw-import-morrowind/commands"]
+exports = [
+    "@openmw-import-morrowind",
+    "@openmw-import-morrowind/commands",
+    "@openmw-import-morrowind/cli",
+]
+
+# The command line: `src/main.luau` hands its arguments to `@openmw-import-morrowind/cli`. A run
+# reads the Morrowind.ini, the cfg and the files its `config=` lines include, and asks which data
+# folders, content files, and archives are there (filesystem.read); with --output or --in-place it
+# writes the openmw.cfg through a temporary file beside it (filesystem.write). It reads no
+# environment variable, since every path it uses is named on the command line; it runs no other
+# program and opens no connection.
+
+[targets.openmw-import-morrowind]
+kind = "command"
+command = "openmw-import-morrowind"
+entry = "src/main.luau"
+capabilities = ["filesystem.read", "filesystem.write"]
