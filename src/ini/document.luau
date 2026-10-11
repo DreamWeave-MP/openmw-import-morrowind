@@ -98,6 +98,7 @@ local function apply(
     { key = 'resources', path = update.resources },
     { key = 'user-data', path = update.userData },
   }
+
   for _, override in overrides do
     if not override.path then continue end
 
