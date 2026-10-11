@@ -23,9 +23,11 @@ return table.freeze {
   importMaps = importer.importMaps,
   importPaths = importer.importPaths,
   readPluginHeader = require('@self/ini/plugin_header').read,
+  renderCfg = writers.renderCfg,
   saveCfg = writers.saveCfg,
   saveResolvedCfg = writers.saveResolvedCfg,
   loadDocument = writers.loadDocument,
   applyUpdate = writers.applyUpdate,
+  renderResolvedDocument = writers.renderResolvedDocument,
   saveResolvedDocument = writers.saveResolvedDocument,
 }

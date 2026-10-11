@@ -183,6 +183,30 @@ suite.describe('documents and writers', function()
       end
     ).toThrow 'unknown option \'archive\''
   end)
+
+  suite.it('renders the text each writer writes, without writing it', function()
+    local cfg = { content = { 'A.esp' }, data = { 'Data Files' } }
+    local rendered = ini.renderCfg(cfg, cfgPath)
+    expect(jess.fs.exists(cfgPath)).toBe(false)
+    expect(rendered).toBe 'content=A.esp\ndata=Data Files\n# OpenMW-Config Serializer Version: 3.0.0\n'
+    ini.saveCfg(cfg, cfgPath)
+    expect(jess.fs.read(cfgPath)).toBe(rendered)
+    expect(function() ini.renderCfg({ fallback = { 'no comma' } }, cfgPath) end).toThrow 'fallback needs Key,Value'
+
+    jess.fs.write(cfgPath, '# kept only where it was written\ndata=mods\n')
+    local document = ini.loadDocument(cfgPath)
+    ini.applyUpdate(
+      document,
+      { cfg = { ['no-sound'] = { '1' } }, changedKeys = { 'no-sound' } },
+      {}
+    )
+    local resolved = ini.renderResolvedDocument(document)
+    local mods = jess.fs.join(assert(fs.canonicalize(root)), 'mods')
+    expect(resolved).toBe(`data={mods}\nno-sound=1\n`)
+    expect(jess.fs.read(cfgPath)).toBe '# kept only where it was written\ndata=mods\n'
+    ini.saveResolvedDocument(document, cfgPath)
+    expect(jess.fs.read(cfgPath)).toBe(resolved)
+  end)
 end)
 
 return suite

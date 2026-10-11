@@ -15,6 +15,14 @@ type Document = document.Document
 --- bare name (`save_cfg_output_to_path`).
 local function directoryOf(path: string): string return jess.fs.parent(path) or '' end
 
+--- `cfg` as the text of a new openmw.cfg at `path`, with every value spelled as given, in key
+--- order, ending in openmw-config's serializer stamp (`serialize_cfg_output`). `path` is the file
+--- the text is for, which only a refusal names; nothing is read or written.
+local function renderCfg(cfg: MultiMap, path: string): string
+  cfg = options.multimap('ini.renderCfg', cfg)
+  return config.renderMap(cfg, directoryOf(path), true)
+end
+
 --- `cfg` written to `path` as a new openmw.cfg with every value spelled as given, in key order,
 --- ending in openmw-config's serializer stamp (`save_cfg_output_to_path`).
 local function saveCfg(cfg: MultiMap, path: string)
@@ -50,16 +58,24 @@ local function applyUpdate(
   }, read :: Update)
 end
 
+--- A loaded document's resolved text: its whole chain flattened, every folder spelled as the
+--- path it resolves to (`serialize_resolved_configuration`).
+local function renderResolvedDocument(target: Document): string
+  return config.resolvedText(target.config)
+end
+
 --- A loaded document's resolved text written to `path`
 --- (`save_resolved_configuration_to_path`).
 local function saveResolvedDocument(target: Document, path: string)
-  document.replaceFile(path, config.resolvedText(target.config))
+  document.replaceFile(path, renderResolvedDocument(target))
 end
 
 return table.freeze {
+  renderCfg = renderCfg,
   saveCfg = saveCfg,
   saveResolvedCfg = saveResolvedCfg,
   loadDocument = document.load,
   applyUpdate = applyUpdate,
+  renderResolvedDocument = renderResolvedDocument,
   saveResolvedDocument = saveResolvedDocument,
 }
