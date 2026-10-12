@@ -294,6 +294,71 @@ suite.describe('the load order', function()
   end)
 end)
 
+suite.describe('readPluginHeader', function()
+  local root = jess.fs.join(scratch, 'openmw-import-morrowind-header')
+
+  --- A subrecord: its tag, the length of its bytes, and its bytes.
+  local function field(tag: string, data: string): string
+    return tag .. string.pack('<I4', #data) .. data
+  end
+
+  --- A file whose TES3 record says it holds `size` bytes, with `rest` after its header.
+  local function plugin(name: string, size: number, rest: string): string
+    local path = jess.fs.join(root, name)
+    jess.fs.write(path, 'TES3' .. string.pack('<I4', size) .. string.rep('\0', 8) .. rest)
+    return path
+  end
+
+  suite.it('reads the masters in order, each up to its NUL, and names the file', function()
+    local fields = field('HEDR', string.rep('\0', 300))
+      .. field('MAST', 'Morrowind.esm\0')
+      .. field('DATA', string.rep('\0', 8))
+      .. field('MAST', 'Tribunal.esm\0left over')
+      .. field('MAST', 'Bare.esm')
+
+    expect(ini.readPluginHeader(plugin('Patch.esp', #fields, fields .. 'NPC_ and the rest'))).toEqual {
+      name = 'Patch.esp',
+      masters = { 'Morrowind.esm', 'Tribunal.esm', 'Bare.esm' },
+    }
+    expect(ini.readPluginHeader(plugin('Alone.esm', 0, '')).masters).toEqual {}
+  end)
+
+  suite.it('reads a master\'s name in the encoding it is given', function()
+    local fields = field('MAST', '\xCC\xEE\xF0\xF0\xEE\xE2\xE8\xED\xE4.esm\0')
+    local path = plugin('Encoded.esp', #fields, fields)
+    expect(ini.readPluginHeader(path, 'win1251').masters).toEqual { 'Морровинд.esm' }
+    expect(ini.readPluginHeader(path).masters).toEqual { 'Ìîððîâèíä.esm' }
+  end)
+
+  suite.it('refuses a file that isn\'t a plugin or is cut short, saying which and where', function()
+    local function refusal(path: string, reason: string): string
+      return `dream.ini: invalid plugin header in {path}: {reason}`
+    end
+
+    local short = jess.fs.join(root, 'Short.esp')
+    jess.fs.write(short, 'TES3')
+    expect(function() ini.readPluginHeader(short) end).toThrow(refusal(short, 'unexpected end of file'))
+
+    local other = jess.fs.join(root, 'Other.esp')
+    jess.fs.write(other, 'TES4' .. string.rep('\0', 12))
+    expect(function() ini.readPluginHeader(other) end).toThrow(refusal(other, 'missing TES3 record'))
+
+    local cut = plugin('Cut.esp', 100, field('HEDR', 'short'))
+    expect(function() ini.readPluginHeader(cut) end).toThrow(refusal(cut, 'TES3 record extends past end of file'))
+
+    local long = 'MAST' .. string.pack('<I4', 100) .. 'Morrowind.esm\0'
+    local overrun = plugin('Overrun.esp', #long, long)
+    expect(function() ini.readPluginHeader(overrun) end).toThrow(refusal(overrun, 'subrecord extends past TES3 record'))
+
+    local partial = field('HEDR', '') .. 'MAS'
+    local trailing = plugin('Trailing.esp', #partial, partial)
+    expect(function() ini.readPluginHeader(trailing) end).toThrow(refusal(trailing, 'trailing partial subrecord header in TES3 record'))
+
+    local missing = jess.fs.join(root, 'Missing.esp')
+    expect(function() ini.readPluginHeader(missing) end).toThrow(`dream.ini: {missing}: `)
+  end)
+end)
+
 suite.describe('documents and writers', function()
   local root = jess.fs.join(scratch, 'openmw-import-morrowind-writers')
   jess.fs.createDir(root)
