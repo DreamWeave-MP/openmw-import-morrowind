@@ -194,17 +194,17 @@ local function usedDirectories(
   local existing: { [string]: boolean }?
 
   for _, hit in hits do
-    local search = searches[hit.search]
-    if search.origin == 'config' or decided[hit.search] then continue end
+    local {origin, path, value, exists} = searches[hit.search]
+    if origin == 'config' or decided[hit.search] then continue end
 
     decided[hit.search] = true
-    local canonical = storage.canonical(search.path, search.exists)
+    local resolved = storage.canonical(path, exists)
     local known = existing or configured(searches)
     existing = known
-    if known[canonical] then continue end
+    if known[resolved] then continue end
 
-    known[canonical] = true
-    table.insert(result, { path = search.path, value = search.value })
+    known[resolved] = true
+    table.insert(result, { path = path, value = value })
   end
 
   return result

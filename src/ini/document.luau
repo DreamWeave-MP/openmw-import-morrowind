@@ -100,11 +100,12 @@ local function apply(
   }
 
   for _, override in overrides do
-    if not override.path then continue end
+    local {key, path} = override
+    if not path then continue end
 
     -- One set replaces the effective singleton; clearing repeatedly cannot erase a parent file.
-    config:set(override.key, override.path)
-    replaceList(document, override.key, { override.path })
+    config:set(key, path)
+    replaceList(document, key, { path })
   end
 end
 

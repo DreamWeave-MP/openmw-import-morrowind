@@ -177,9 +177,9 @@ local function run(
       continue
     end
 
-    local resolved = content.import(request, archives)
+    local {directories, names, events, warnings} = content.import(request, archives)
 
-    for _, directory in resolved.directories do
+    for _, directory in directories do
       imported.data = imported.data or {}
       table.insert(imported.data, directory.value)
       changed.data = true
@@ -191,14 +191,14 @@ local function run(
     end
 
     local key = if archives then 'fallback-archive' else 'content'
-    imported[key], changed[key] = resolved.names, true
+    imported[key], changed[key] = names, true
 
-    for _, event in resolved.events do
+    for _, event in events do
       table.insert(result.events, event)
       log.debug(event.kind, { path = event.path })
     end
 
-    for _, warning in resolved.warnings do
+    for _, warning in warnings do
       table.insert(result.warnings, warning)
       log.warn(warning.message)
     end
@@ -258,11 +258,11 @@ local function importPaths(given: types.PathsOptions): Result
     error(storage.ioMessage(iniPath, message :: string), 0)
   end
 
-  local parsed = parser.parseIni(text, { encoding = encoding })
-  local result = run(cfg, parsed.entries, import, iniPath, cfgDir, dataDirBase, writeResolved)
+  local {entries, warnings} = parser.parseIni(text, { encoding = encoding })
+  local result = run(cfg, entries, import, iniPath, cfgDir, dataDirBase, writeResolved)
 
-  for index = #parsed.warnings, 1, -1 do
-    table.insert(result.warnings, 1, parsed.warnings[index])
+  for index = #warnings, 1, -1 do
+    table.insert(result.warnings, 1, warnings[index])
   end
 
   return result

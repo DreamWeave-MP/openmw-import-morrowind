@@ -313,22 +313,22 @@ local function parse(argv: { string }): (Command?, string?)
 end
 
 --- An event as the original words it (`ImportEvent`'s display).
-local function eventText(event: importer.Event): string
-  if event.kind == 'contentFileResolved' then
-    return `content file: {event.path} timestamp = ({string.format('%d', event.modified or 0)})`
+local function eventText({kind, path, modified}: importer.Event): string
+  if kind == 'contentFileResolved' then
+    return `content file: {path} timestamp = ({string.format('%d', modified or 0)})`
   end
 
-  if event.kind == 'archiveResolved' then return `archive: {event.path}` end
+  if kind == 'archiveResolved' then return `archive: {path}` end
 
-  if event.kind == 'dataDirAddedForContent' then
-    return `adding data directory used to resolve content files: {event.path}`
+  if kind == 'dataDirAddedForContent' then
+    return `adding data directory used to resolve content files: {path}`
   end
 
-  if event.kind == 'dataDirAddedForArchive' then
-    return `adding data directory used to resolve fallback archives: {event.path}`
+  if kind == 'dataDirAddedForArchive' then
+    return `adding data directory used to resolve fallback archives: {path}`
   end
 
-  return `{event.kind}: {event.path}`
+  return `{kind}: {path}`
 end
 
 local function transcript(result: commands.Result): { Line }
