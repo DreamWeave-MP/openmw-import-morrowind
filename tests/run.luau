@@ -197,6 +197,65 @@ suite.describe('the INI\'s numbered entries', function()
       ['Archives:Archive 4'] = { 'Never.bsa' },
     }).toBe 'Morrowind.bsa, First.bsa, Spaced.BSA'
   end)
+
+  suite.it('counts past a hundred, and reads none of them when there is no index 0', function()
+    local entries: ini.MultiMap = {}
+    local expected = { 'Morrowind.bsa' }
+
+    for index = 0, 120 do
+      entries[`Archives:Archive {index}`] = { `Archive{index}.bsa` }
+      table.insert(expected, `Archive{index}.bsa`)
+    end
+
+    expect(sought(entries)).toBe(table.concat(expected, ', '))
+    entries['Archives:Archive 0'] = nil
+    expect(sought(entries)).toBe 'Morrowind.bsa'
+    expect(sought {}).toBe 'Morrowind.bsa'
+  end)
+
+  suite.it('reads the content files the same way, and stops them at the first that isn\'t there', function()
+    local entries: ini.MultiMap = {
+      ['GAME FILES:GAMEFILE1'] = { 'Upper.esp' },
+      ['Game Files:GameFile1'] = { 'Mixed.esp', 'Second.esp' },
+      ['Game Files:GameFile 2'] = { 'Spaced.esp' },
+      ['Game Files:GameFile02'] = { 'Padded.esp' },
+    }
+    local expected: { string } = {}
+
+    for index = 0, 12 do
+      if index ~= 1 then entries[`Game Files:GameFile{index}`] = { `Plugin{index}.esp` } end
+    end
+
+    -- Every file is there but the one at index 10, which a walk of the keys in order meets third.
+    for _, name in { 'Upper.esp', 'Mixed.esp', 'Second.esp', 'Spaced.esp', 'Padded.esp' } do
+      jess.fs.write(jess.fs.join(root, 'Data Files', name), 'TES3')
+    end
+
+    for index = 0, 12 do
+      if index == 10 then continue end
+
+      jess.fs.write(jess.fs.join(root, 'Data Files', `Plugin{index}.esp`), 'TES3')
+      if index < 10 and index ~= 1 then table.insert(expected, `Plugin{index}.esp`) end
+    end
+
+    for _, name in { 'Upper.esp', 'Mixed.esp', 'Second.esp' } do
+      table.insert(expected, name)
+    end
+
+    local options = { gameFiles = true, archives = false, iniPath = iniPath }
+    local result = ini.importMaps({}, entries, options)
+    local content = table.clone(result.cfg.content)
+    table.sort(content)
+    table.sort(expected)
+    expect(content).toEqual(expected)
+    expect(result.warnings).toEqual {
+      {
+        kind = 'missingGameFile',
+        file = 'Plugin10.esp',
+        message = 'GameFile entry not found: Plugin10.esp. Later GameFile entries were not imported.',
+      },
+    }
+  end)
 end)
 
 suite.describe('the load order', function()
@@ -291,6 +350,54 @@ suite.describe('the load order', function()
     assert(fs.hardLink(path 'Twin.esp', path 'twin.esp'))
     expect(order { 'twin.esp', 'Base.esm', 'Twin.esp' }).toEqual { 'Base.esm', 'Twin.esp', 'twin.esp' }
     expect(order { 'Twin.esp', 'twin.esp', 'Base.esm' }).toEqual { 'Base.esm', 'Twin.esp', 'twin.esp' }
+  end)
+
+  suite.it('takes those paths as the filesystem names the files, not as it was asked for them', function()
+    together('twin.esp', 'Base.esm')
+    if jess.fs.exists(path 'Twin.esp') then return end
+
+    -- `Twin.esp` is a link to the same file in a folder whose name comes after `Data Files`, so
+    -- it is asked for by the lesser path and named by the greater.
+    local real = jess.fs.join(root, 'elsewhere', 'Real.esp')
+    jess.fs.createDir(jess.fs.join(root, 'elsewhere'))
+    assert(fs.hardLink(path 'twin.esp', real))
+    assert(fs.symlink(real, path 'Twin.esp'))
+    expect(order { 'Twin.esp', 'Base.esm', 'twin.esp' }).toEqual { 'Base.esm', 'twin.esp', 'Twin.esp' }
+    expect(order { 'twin.esp', 'Twin.esp', 'Base.esm' }).toEqual { 'Base.esm', 'twin.esp', 'Twin.esp' }
+
+    local entries: ini.MultiMap = {
+      ['Game Files:GameFile0'] = { 'Twin.esp' },
+      ['Game Files:GameFile1'] = { 'twin.esp' },
+    }
+    local options = { gameFiles = true, archives = false, iniPath = iniPath, verbose = true }
+    local result = ini.importMaps({}, entries, options)
+    local resolved = assert(fs.canonicalize(root))
+    expect(result.cfg.content).toEqual { 'twin.esp', 'Twin.esp' }
+    expect([for event in result.events => event.path]).toEqual {
+      jess.fs.join(resolved, 'elsewhere', 'Real.esp'),
+      jess.fs.join(resolved, 'Data Files', 'twin.esp'),
+      jess.fs.join(resolved, 'Data Files'),
+    }
+  end)
+
+  suite.it('and a file found in a folder of the cfg that is a link, by the folder it is a link to', function()
+    together('twin.esp', 'Base.esm')
+    if jess.fs.exists(path 'Twin.esp') then return end
+
+    -- The cfg's folder is searched by its own name, which comes before `Data Files`; the folder
+    -- it links to comes after.
+    local real, link = jess.fs.join(root, 'elsewhere'), jess.fs.join(root, 'Aside')
+    jess.fs.createDir(real)
+    assert(fs.hardLink(path 'twin.esp', jess.fs.join(real, 'Twin.esp')))
+    assert(fs.symlink(real, link, { directory = true }))
+    local entries: ini.MultiMap = {
+      ['Game Files:GameFile0'] = { 'Twin.esp' },
+      ['Game Files:GameFile1'] = { 'twin.esp' },
+      ['Game Files:GameFile2'] = { 'Base.esm' },
+    }
+    local options = { gameFiles = true, archives = false, iniPath = iniPath }
+    local result = ini.importMaps({ data = { link } }, entries, options)
+    expect(result.cfg.content).toEqual { 'Base.esm', 'twin.esp', 'Twin.esp' }
   end)
 end)
 
