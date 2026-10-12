@@ -133,6 +133,167 @@ suite.describe('importPaths', function()
   end)
 end)
 
+suite.describe('the INI\'s numbered entries', function()
+  local root = jess.fs.join(scratch, 'openmw-import-morrowind-entries')
+  local iniPath = jess.fs.join(root, 'Morrowind.ini')
+
+  suite.beforeEach(function()
+    fs.remove(root, { recursive = true })
+    jess.fs.createDir(jess.fs.join(root, 'Data Files'))
+  end)
+
+  --- The archives an import of `entries` looks for, in the order it looks: none is there, so the
+  --- import names every one.
+  local function sought(entries: ini.MultiMap): string
+    -- `importMaps` raises for the archives it can't find, which is how the list is read here.
+    local found, problem = pcall(ini.importMaps, {}, entries, { iniPath = iniPath })
+    expect(found).toBe(false)
+    return string.match(tostring(problem), 'not found: (.-); searched: ') or tostring(problem)
+  end
+
+  suite.it('reads them by index, not in the order of their keys, up to the first index missing', function()
+    local entries: ini.MultiMap = { ['Archives:Archive 13'] = { 'After.bsa' } }
+    local expected = { 'Morrowind.bsa' }
+
+    for index = 0, 11 do
+      entries[`Archives:Archive {index}`] = { `Archive{index}.bsa` }
+      table.insert(expected, `Archive{index}.bsa`)
+    end
+
+    expect(sought(entries)).toBe(table.concat(expected, ', '))
+  end)
+
+  suite.it('takes a key in any case, and the spellings of one index in the order of their bytes', function()
+    expect(sought {
+      ['archives:archive 0'] = { 'lower.bsa' },
+      ['ARCHIVES:ARCHIVE 0'] = { 'UPPER.bsa' },
+      ['Archives:Archive 0'] = { 'Mixed.bsa', 'Second.bsa' },
+      ['aRCHIVES:aRCHIVE 1'] = { 'Next.bsa' },
+      ['Brchives:Archive 2'] = { 'Other.bsa' },
+    }).toBe 'Morrowind.bsa, UPPER.bsa, Mixed.bsa, Second.bsa, lower.bsa, Next.bsa'
+  end)
+
+  suite.it('takes only a plain decimal for an index', function()
+    expect(sought {
+      ['Archives:Archive 0'] = { 'Zero.bsa' },
+      ['Archives:Archive 00'] = { 'Doubled.bsa' },
+      ['Archives:Archive 01'] = { 'Padded.bsa' },
+      ['Archives:Archive +1'] = { 'Signed.bsa' },
+      ['Archives:Archive 1 '] = { 'Trailing.bsa' },
+      ['Archives:Archive  1'] = { 'Leading.bsa' },
+      ['Archives:Archive 1.0'] = { 'Fraction.bsa' },
+      ['Archives:Archive 0x1'] = { 'Hex.bsa' },
+      ['Archives:Archive 1e0'] = { 'Exponent.bsa' },
+      ['Archives:Archive '] = { 'Unnumbered.bsa' },
+    }).toBe 'Morrowind.bsa, Zero.bsa'
+  end)
+
+  suite.it('passes over an entry that isn\'t an archive, and stops at an index with no values', function()
+    expect(sought {
+      ['Archives:Archive 0'] = { 'First.bsa' },
+      ['Archives:Archive 1'] = { 'Notes.txt' },
+      ['Archives:Archive 2'] = { ' Spaced.BSA\t' },
+      ['Archives:Archive 3'] = {},
+      ['Archives:Archive 4'] = { 'Never.bsa' },
+    }).toBe 'Morrowind.bsa, First.bsa, Spaced.BSA'
+  end)
+end)
+
+suite.describe('the load order', function()
+  local root = jess.fs.join(scratch, 'openmw-import-morrowind-order')
+  local iniPath = jess.fs.join(root, 'Morrowind.ini')
+  local dataFiles = jess.fs.join(root, 'Data Files')
+
+  suite.beforeEach(function()
+    fs.remove(root, { recursive = true })
+    jess.fs.createDir(dataFiles)
+  end)
+
+  local function path(name: string): string return jess.fs.join(dataFiles, name) end
+
+  --- Files that are one file under several names, so the filesystem gives every name one time.
+  local function together(first: string, ...: string)
+    jess.fs.write(path(first), 'TES3')
+
+    for _, name in { ... } do
+      assert(fs.hardLink(path(first), path(name)))
+    end
+  end
+
+  --- A file the filesystem's clock puts after `earlier`, however coarse that clock is.
+  local function after(earlier: string, name: string)
+    local first = assert(jess.fs.stat(path(earlier)))
+    local deadline, later = os.clock() + 10, false
+
+    repeat
+      jess.fs.write(path(name), 'TES3')
+      local metadata = assert(jess.fs.stat(path(name)))
+      local seconds, was = metadata.modifiedSeconds or 0, first.modifiedSeconds or 0
+      later = seconds > was
+        or (seconds == was and (metadata.modifiedNanoseconds or 0) > (first.modifiedNanoseconds or 0))
+    until later or os.clock() > deadline
+
+    expect(later).toBe(true)
+  end
+
+  --- The `content=` list an import gives the INI's `names`, in the order the INI lists them.
+  local function order(names: { string }): { string }
+    local entries: ini.MultiMap = {}
+
+    for index, name in names do
+      entries[`Game Files:GameFile{index - 1}`] = { name }
+    end
+
+    local options = { gameFiles = true, archives = false, iniPath = iniPath }
+    return ini.importMaps({}, entries, options).cfg.content
+  end
+
+  suite.it('puts masters first, then the later name first, whatever its case, among files of one time', function()
+    together('alpha.esp', 'Zeta.esp', 'Base.esm', 'BETA.ESP', 'Addon.ESM', 'gamma.Esp')
+    expect(order { 'alpha.esp', 'Zeta.esp', 'Base.esm', 'BETA.ESP', 'Addon.ESM', 'gamma.Esp' }).toEqual {
+      'Base.esm',
+      'Addon.ESM',
+      'Zeta.esp',
+      'gamma.Esp',
+      'BETA.ESP',
+      'alpha.esp',
+    }
+  end)
+
+  suite.it('puts a file changed earlier before one changed later, whatever their names', function()
+    together('Alpha.esp', 'Early.esm')
+    after('Alpha.esp', 'Zeta.esp')
+    after('Zeta.esp', 'Late.esm')
+    after('Late.esm', 'Middle.esp')
+    expect(order { 'Middle.esp', 'Zeta.esp', 'Late.esm', 'Alpha.esp', 'Early.esm' }).toEqual {
+      'Early.esm',
+      'Late.esm',
+      'Alpha.esp',
+      'Zeta.esp',
+      'Middle.esp',
+    }
+  end)
+
+  suite.it('keeps an entry the INI gives twice, twice', function()
+    together('Base.esm', 'Plugin.esp')
+    expect(order { 'Plugin.esp', 'Base.esm', 'Plugin.esp' }).toEqual {
+      'Base.esm',
+      'Plugin.esp',
+      'Plugin.esp',
+    }
+  end)
+
+  suite.it('puts two files whose names differ only in case in the order of their paths', function()
+    together('Twin.esp', 'Base.esm')
+    -- A filesystem that doesn't tell the two names apart has one file here, and nothing to order.
+    if jess.fs.exists(path 'twin.esp') then return end
+
+    assert(fs.hardLink(path 'Twin.esp', path 'twin.esp'))
+    expect(order { 'twin.esp', 'Base.esm', 'Twin.esp' }).toEqual { 'Base.esm', 'Twin.esp', 'twin.esp' }
+    expect(order { 'Twin.esp', 'twin.esp', 'Base.esm' }).toEqual { 'Base.esm', 'Twin.esp', 'twin.esp' }
+  end)
+end)
+
 suite.describe('documents and writers', function()
   local root = jess.fs.join(scratch, 'openmw-import-morrowind-writers')
   jess.fs.createDir(root)
