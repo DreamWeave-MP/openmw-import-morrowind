@@ -324,11 +324,7 @@ local function import(request: Request, archives: boolean)
   end
 
   if #missing > 0 then
-    local paths: { string } = {}
-
-    for _, search in searches do
-      table.insert(paths, search.path)
-    end
+    local paths = [for search in searches => search.path]
 
     error(
       `dream.ini: fallback archives not found: {table.concat(missing, ', ')}; searched: {table.concat(
@@ -350,12 +346,7 @@ local function import(request: Request, archives: boolean)
     })
   end
 
-  local names: { string } = {}
-
-  for _, hit in hits do
-    table.insert(names, hit.name)
-  end
-
+  local names = [for hit in hits => hit.name]
   return { names = names, directories = directories, events = events, warnings = warnings }
 end
 

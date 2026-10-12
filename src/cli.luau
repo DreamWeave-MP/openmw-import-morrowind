@@ -388,13 +388,7 @@ end
 
 local function render(result: commands.Result, options: RenderOptions?): string
   local stream: Stream = if options and options.stream then options.stream else 'stdout'
-  local output: { string } = {}
-
-  for _, line in transcript(result) do
-    if line.stream == stream then table.insert(output, line.text) end
-  end
-
-  return table.concat(output)
+  return table.concat([for line in transcript(result) if line.stream == stream => line.text])
 end
 
 local function status(result: commands.Result): number
