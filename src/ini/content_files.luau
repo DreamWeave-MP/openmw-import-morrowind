@@ -35,42 +35,6 @@ type Resolved = {
 }
 type Directory = { path: string, value: string }
 
---- The index `key` gives after the prefix, plus one, or nil for a key that isn't the prefix and
---- then a canonical decimal. The prefix is `length` bytes and given in lower case. An index of
---- more than fifteen digits is no index: no list gets that far, and past 2^53 two of them would
---- be one number.
-local function indexOf(key: string, lowerPrefix: string, length: number): number?
-  local size = #key
-  if size <= length or size > length + 15 then return nil end
-
-  for position = 1, length do
-    local byte = string.byte(key, position)
-    if byte >= 65 and byte <= 90 then byte += 32 end
-    if byte ~= string.byte(lowerPrefix, position) then return nil end
-  end
-
-  local index = string.byte(key, length + 1) - 48
-  if index == 0 then return if size == length + 1 then 1 else nil end
-  if index < 0 or index > 9 then return nil end
-
-  for position = length + 2, size do
-    local digit = string.byte(key, position) - 48
-    if digit < 0 or digit > 9 then return nil end
-
-    index = index * 10 + digit
-  end
-
-  return index + 1
-end
-
---- `values` after what `list` holds. A `table.move` to the end would fit `list` to its new length
---- each time, copying all of it.
-local function extend(list: { string }, values: { string })
-  for position = 1, #values do
-    table.insert(list, values[position])
-  end
-end
-
 --- The values of `{prefix}{N}` for `N = 0, 1, ...` up to the first missing index, keys compared
 --- ASCII case-insensitively; only a canonical decimal is an index (`7`, never `07` or `+7`).
 --- Several spellings of one index contribute their values in key order, as dream-ini's sorted
@@ -78,50 +42,43 @@ end
 local function sequential(ini: MultiMap, prefix: string): { string }
   local lowerPrefix, length = string.lower(prefix), #prefix
   local lower, upper = string.byte(lowerPrefix, 1), string.byte(string.upper(prefix), 1)
-  -- The key of each index, at the index plus one; and, for an index spelled more than one way,
-  -- every key of it.
-  local keys: { [number]: string }, spellings: { [number]: { string } } = {}, {}
+  -- The keys of each index, by the index as its keys spell it.
+  local spellings: { [string]: { string } } = {}
 
   for key, values in ini do
     local first = string.byte(key, 1)
     if first ~= lower and first ~= upper then continue end
-    if #values == 0 then continue end
+    if #values == 0 or string.lower(string.sub(key, 1, length)) ~= lowerPrefix then continue end
 
-    local slot = indexOf(key, lowerPrefix, length)
-    if not slot then continue end
+    local tail = string.sub(key, length + 1)
+    if tail ~= '0' and not string.match(tail, '^[1-9][0-9]*$') then continue end
 
-    local known = keys[slot]
-    if not known then
-      keys[slot] = key
-      continue
-    end
+    local keys = spellings[tail]
 
-    local several = spellings[slot]
-
-    if several then
-      table.insert(several, key)
+    if keys then
+      table.insert(keys, key)
     else
-      spellings[slot] = { known, key }
+      spellings[tail] = { key }
     end
   end
 
   local result: { string } = {}
-  local slot = 1
+  local index, keys = 0, spellings['0']
 
-  while keys[slot] do
-    local several = spellings[slot]
+  while keys do
+    table.sort(keys)
 
-    if several then
-      table.sort(several)
+    for _, key in keys do
+      local values = ini[key]
 
-      for _, key in several do
-        extend(result, ini[key])
+      -- A `table.move` to the end would fit `result` to its new length each time, copying all of it.
+      for position = 1, #values do
+        table.insert(result, values[position])
       end
-    else
-      extend(result, ini[keys[slot]])
     end
 
-    slot += 1
+    index += 1
+    keys = spellings[tostring(index)]
   end
 
   return result
