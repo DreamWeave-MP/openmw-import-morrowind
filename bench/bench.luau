@@ -1,0 +1,698 @@
+--!strict
+-- The Morrowind.ini import, timed from Luau through what the package exports: imports over parsed
+-- maps and over files, the command's request with each of its three writers, the command line's
+-- parse and what it prints, a plugin's header, and a whole run of the command as a new process.
+-- Run by `jess run --package . --package-path .. --capability filesystem.read --capability
+-- filesystem.write [--capability process.spawn] bench/bench.luau <scratch> [filter] [jess]
+-- [package] [package path]`, on a release build. Prints one line per workload: its name, a tab,
+-- and the seconds one call takes. Every workload's result is compared with what the generator of
+-- its input says it must be, outside the time, so a path that stopped doing the work fails here.
+local cli = require '@openmw-import-morrowind/cli'
+local commands = require '@openmw-import-morrowind/commands'
+local fs = require '@dream/fs'
+local importer = require '@openmw-import-morrowind'
+local log = require '@jess/log'
+local process = require '@dream/process'
+local text = require '@dream-ini'
+
+-- A build without the verified toolchain runs Luau slower than a release does, so a number from
+-- one says nothing about what ships.
+if not jess.bench.verified then
+  error('import bench: this jess was built without the verified toolchain: measure on a release build', 0)
+end
+
+--- The arguments: a folder to write into; a filter on the workload names (`''` for all); and,
+--- for the whole run of the command, the jess to run, the package's folder, and the folder its
+--- dependencies are found in. Without the last three that workload is left out.
+local scratch: string, filter: string? = ...
+local program: string?, package: string?, packagePath: string? = select(3, ...)
+local only = if filter and filter ~= '' then filter else nil
+
+--- Everything the bench writes goes below this folder, which it removes when it is done.
+local root = jess.fs.join(scratch, 'openmw-import-morrowind-bench')
+
+type MultiMap = importer.MultiMap
+type Row = { name: string, seconds: number }
+
+local rows: { Row } = {}
+
+local function median(samples: { number }): number
+  table.sort(samples)
+  return samples[(#samples + 1) // 2]
+end
+
+--- Seconds per call of `body`: warmed up, then the median of seven batches of a size that takes
+--- about a tenth of a second, with a full collection before each so one batch's garbage isn't the
+--- next one's. `verify` is given the result of the first call and of one more after the last
+--- batch, outside the time.
+local function measure(body: () -> unknown, verify: (result: unknown) -> ()): number
+  jess.bench.collect()
+  verify(body())
+  local start = os.clock()
+  body()
+  local once = math.max(os.clock() - start, 1e-7)
+  local iterations = math.max(1, math.floor(0.1 / once))
+  local samples: { number } = {}
+
+  for batch = 1, 7 do
+    jess.bench.collect()
+    start = os.clock()
+
+    for _ = 1, iterations do
+      body()
+    end
+
+    samples[batch] = (os.clock() - start) / iterations
+  end
+
+  verify(body())
+  return median(samples)
+end
+
+local function workload(name: string, body: () -> unknown, verify: (result: unknown) -> ())
+  if only and not string.find(name, only, 1, true) then return end
+
+  table.insert(rows, { name = name, seconds = measure(body, verify) })
+end
+
+--- Stops the bench when a workload's result isn't what its inputs say it is.
+local function hold(name: string, what: string, actual: unknown, expected: unknown)
+  if actual == expected then return end
+
+  error(`import bench: {name}: {what} is {tostring(actual)}, not {tostring(expected)}`, 0)
+end
+
+--- An INI being written: its lines, how many of its settings an import turns into `fallback=`
+--- lines, and how long those lines are together.
+type Draft = { lines: { string }, title: string, settings: number, length: number }
+
+local function section(draft: Draft, title: string)
+  table.insert(draft.lines, `[{title}]`)
+  draft.title = title
+end
+
+--- A setting an import leaves alone.
+local function ignored(draft: Draft, name: string, value: string)
+  table.insert(draft.lines, `{name}={value}`)
+end
+
+--- A setting an import writes as `fallback=Section_Name,value`.
+local function imported(draft: Draft, name: string, value: string)
+  ignored(draft, name, value)
+  draft.settings += 1
+  draft.length += #draft.title + #name + #value + 2
+end
+
+local Weathers = {
+  'Clear',
+  'Cloudy',
+  'Foggy',
+  'Overcast',
+  'Rain',
+  'Thunderstorm',
+  'Ashstorm',
+  'Blight',
+  'Snow',
+  'Blizzard',
+}
+
+local WeatherFields = {
+  'Land Fog Day Depth',
+  'Land Fog Night Depth',
+  'Wind Speed',
+  'Cloud Speed',
+  'Glare View',
+  'Ambient Loop Sound ID',
+}
+
+local MoonFields = {
+  'Size',
+  'Axis Offset',
+  'Speed',
+  'Daily Increment',
+  'Moon Shadow Early Fade Angle',
+  'Fade Start Angle',
+  'Fade End Angle',
+  'Fade In Start',
+  'Fade In Finish',
+  'Fade Out Start',
+  'Fade Out Finish',
+}
+
+--- An INI the shape of the game's own: the sections an import reads, each with the keys it
+--- reads spelled as the game spells them, among sections and comments it doesn't.
+local function retailIni(): Draft
+  local draft: Draft = { lines = {}, title = '', settings = 0, length = 0 }
+  section(draft, 'General')
+  ignored(draft, 'Disable Audio', '0')
+  ignored(draft, 'Show FPS', '0')
+  ignored(draft, 'Max FPS', '240')
+  imported(draft, 'Werewolf FOV', '100')
+  table.insert(draft.lines, '')
+  section(draft, 'Movies')
+
+  for _, name in { 'Company Logo', 'Morrowind Logo', 'New Game', 'Loading', 'Options Menu' } do
+    imported(draft, name, (string.gsub(string.lower(name), ' ', '_')) .. '.bik')
+  end
+
+  table.insert(draft.lines, '')
+  section(draft, 'Level Up')
+
+  for level = 2, 20 do
+    imported(draft, `Level{level}`, `You realize that all your life you have been coasting. ({level})`)
+  end
+
+  imported(draft, 'Default', 'The results of hard work and dedication always look like luck.')
+
+  for question = 1, 10 do
+    table.insert(draft.lines, '')
+    section(draft, `Question {question}`)
+    imported(draft, 'Question', `On a clear day you chance upon a strange animal ({question})`)
+    imported(draft, 'AnswerOne', 'Draw your dagger, mercifully endings its life with a single thrust?')
+    imported(draft, 'AnswerTwo', 'Use herbs from your pack to put it to sleep?')
+    imported(draft, 'AnswerThree', 'Do not interfere in the natural evolution of events?')
+    imported(draft, 'Sound', `Vo\\Misc\\CharGen QA{question}.wav`)
+  end
+
+  table.insert(draft.lines, '')
+  table.insert(draft.lines, ';;; the sky, by the hour')
+  section(draft, 'Weather')
+  imported(draft, 'Sunrise Time', '6')
+  imported(draft, 'Sunset Time', '18')
+  imported(draft, 'Sunrise Duration', '2')
+  imported(draft, 'Sunset Duration', '2')
+  imported(draft, 'Hours Between Weather Changes', '20')
+
+  for index, weather in Weathers do
+    table.insert(draft.lines, '')
+    section(draft, `Weather {weather}`)
+    imported(draft, 'Cloud Texture', `Tx_Sky_{weather}.tga`)
+    imported(draft, 'Clouds Maximum Percent', `{index / 10}`)
+    imported(draft, 'Transition Delta', `.0{index}5`)
+
+    for component, part in { 'Sky', 'Fog', 'Ambient', 'Sun' } do
+      for hour, time in { 'Sunrise', 'Day', 'Sunset', 'Night' } do
+        local color = `{index * 23 % 256},{component * 61 % 256},{hour * 47 % 256}`
+        imported(draft, `{part} {time} Color`, color)
+      end
+    end
+
+    for field, name in WeatherFields do
+      imported(draft, name, `{index * field / 4}`)
+    end
+  end
+
+  table.insert(draft.lines, '')
+  section(draft, 'Moons')
+
+  for _, moon in { 'Masser', 'Secunda' } do
+    for field, name in MoonFields do
+      imported(draft, `{moon} {name}`, `{field * 5}`)
+    end
+  end
+
+  imported(draft, 'Script Color', '255,20,20')
+  table.insert(draft.lines, '')
+  section(draft, 'Blood')
+
+  for index = 0, 7 do
+    if index < 3 then imported(draft, `Model {index}`, `BloodSplat{index}.nif`) end
+
+    imported(draft, `Texture {index}`, `Tx_Blood_{index}.tga`)
+    imported(draft, `Texture Name {index}`, `Blood {index}`)
+  end
+
+  for noise = 1, 12 do
+    table.insert(draft.lines, '')
+    table.insert(draft.lines, `; settings the import has no use for, {noise}`)
+    section(draft, `Display {noise}`)
+
+    for index = 1, 12 do
+      ignored(draft, `Setting {index} Of {noise}`, `{noise * index}`)
+    end
+  end
+
+  return draft
+end
+
+--- The game's three masters, which load first; every other content file is a plugin, and one in
+--- fifty of them a master a mod brought.
+local Masters = { 'Morrowind.esm', 'Tribunal.esm', 'Bloodmoon.esm' }
+
+local ContentFiles, Archives, DataFolders = 256, 8, 8
+
+local function contentFile(index: number): string
+  if index < #Masters then return Masters[index + 1] end
+  if index % 50 == 0 then return `Mod Master {index}.ESM` end
+
+  return if index % 7 == 0 then `plugin {index}.ESP` else `Plugin {index}.esp`
+end
+
+local function archive(index: number): string return `Archive {index}.bsa` end
+
+--- `draft` with the load order and the archives after it, as the launcher writes them.
+local function withFiles(draft: Draft): string
+  local lines = table.clone(draft.lines)
+  table.insert(lines, '')
+  table.insert(lines, '[Archives]')
+
+  for index = 0, Archives - 1 do
+    table.insert(lines, `Archive {index}={archive(index)}`)
+  end
+
+  table.insert(lines, '')
+  table.insert(lines, '[Game Files]')
+
+  for index = 0, ContentFiles - 1 do
+    table.insert(lines, `GameFile{index}={contentFile(index)}`)
+  end
+
+  return table.concat(lines, '\r\n') .. '\r\n'
+end
+
+local retail = retailIni()
+local retailText = table.concat(retail.lines, '\r\n') .. '\r\n'
+local installText = withFiles(retail)
+
+fs.remove(root, { recursive = true })
+
+--- A file below the bench's folder, its folders made, and its path.
+local function file(data: string, ...: string): string
+  local path = jess.fs.join(root, ...)
+  jess.fs.write(path, data)
+  return path
+end
+
+--- A folder below the bench's folder, as the filesystem names it.
+local function folder(...: string): string
+  local path = jess.fs.join(root, ...)
+  jess.fs.createDir(path)
+  return assert(fs.canonicalize(path))
+end
+
+--- A file an import found: the name the INI gives it and where it is.
+type Found = { name: string, path: string }
+
+--- A found file with what the launcher's order compares.
+type Keyed = {
+  name: string,
+  lower: string,
+  plugin: boolean,
+  seconds: number,
+  nanoseconds: number,
+  path: string,
+}
+
+-- The game's own layout: every content file and archive in the `Data Files` beside the INI.
+local plainIni = file(installText, 'plain', 'Morrowind.ini')
+local plainData = folder('plain', 'Data Files')
+local plainFiles: { Found } = {}
+
+-- A modded layout: the masters and archives beside the INI, each plugin in one of the folders
+-- an openmw.cfg names, under comments and settings of its own.
+local moddedIni = file(installText, 'modded', 'Morrowind.ini')
+local moddedData = folder('modded', 'Data Files')
+local moddedFiles: { Found } = {}
+local mods: { string } = {}
+
+for index = 1, DataFolders do
+  mods[index] = folder('mods', `Mod {index}`)
+end
+
+for index = 0, ContentFiles - 1 do
+  local name = contentFile(index)
+  local home = if index < #Masters then moddedData else mods[index % DataFolders + 1]
+  table.insert(plainFiles, { name = name, path = file('TES3', 'plain', 'Data Files', name) })
+  jess.fs.write(jess.fs.join(home, name), 'TES3')
+  table.insert(moddedFiles, { name = name, path = jess.fs.join(home, name) })
+end
+
+for index = -1, Archives - 1 do
+  local name = if index < 0 then 'Morrowind.bsa' else archive(index)
+  file('', 'plain', 'Data Files', name)
+  file('', 'modded', 'Data Files', name)
+end
+
+local cfgLines: { string } = { '# The folders, in the order they overlay each other.', '' }
+
+for index, mod in mods do
+  if index % 4 == 1 then table.insert(cfgLines, `# mods {index} to {index + 3}`) end
+
+  table.insert(cfgLines, `data="{mod}"`)
+end
+
+table.insert(cfgLines, '')
+table.insert(cfgLines, 'encoding=win1252')
+table.insert(cfgLines, 'no-sound=1')
+
+for index = 1, 64 do
+  if index % 16 == 1 then table.insert(cfgLines, `# settings {index} to {index + 15}`) end
+
+  table.insert(cfgLines, `fallback=Old_Setting_{index},old`)
+end
+
+for index = 1, 16 do
+  table.insert(cfgLines, `content=Old {index}.esp`)
+end
+
+table.insert(cfgLines, 'fallback-archive=Old.bsa')
+local cfgText = table.concat(cfgLines, '\n') .. '\n'
+local moddedCfg = file(cfgText, 'config', 'openmw.cfg')
+
+--- The names of `files` in the order the launcher loads them: masters first, then by
+--- modification time, then by name in reverse without regard to ASCII case, then by path. Worked
+--- out here from the files themselves, for an import's `content=` list to be held to.
+local function loadOrder(files: { Found }): string
+  local keyed: { Keyed } = {}
+
+  for _, found in files do
+    local metadata = assert(jess.fs.stat(found.path))
+    local lower = string.lower(found.name)
+    table.insert(keyed, {
+      name = found.name,
+      lower = lower,
+      plugin = string.sub(lower, -4) ~= '.esm',
+      seconds = metadata.modifiedSeconds or 0,
+      nanoseconds = metadata.modifiedNanoseconds or 0,
+      path = assert(fs.canonicalize(found.path)),
+    })
+  end
+
+  table.sort(keyed, function(left: Keyed, right: Keyed): boolean
+    if left.plugin ~= right.plugin then return right.plugin end
+    if left.seconds ~= right.seconds then return left.seconds < right.seconds end
+    if left.nanoseconds ~= right.nanoseconds then return left.nanoseconds < right.nanoseconds end
+    if left.lower ~= right.lower then return left.lower > right.lower end
+
+    return left.path < right.path
+  end)
+
+  return table.concat([for entry in keyed => entry.name], '\n')
+end
+
+local plainOrder, moddedOrder = loadOrder(plainFiles), loadOrder(moddedFiles)
+local archiveOrder = table.concat([for index in range(0, Archives - 1) => archive(index)], '\n')
+
+--- Holds an import's settings to the INI they came from: every `fallback=` line it must write,
+--- and none of the ones the cfg had, which an import replaces.
+local function holdFallback(name: string, cfg: MultiMap)
+  local fallback = cfg.fallback or {}
+  local kept = #[for line in fallback if string.sub(line, 1, 4) == 'Old_' => line]
+  local length = sum[for line in fallback => #line]
+  hold(name, 'the number of fallback settings', #fallback, retail.settings)
+  hold(name, 'the length of the fallback settings', length, retail.length)
+  hold(name, 'the settings kept from the cfg', kept, 0)
+end
+
+--- Holds an import over files to the files: the load order, the archives, and the settings.
+local function holdImport(name: string, cfg: MultiMap, order: string)
+  holdFallback(name, cfg)
+  hold(name, 'the load order', table.concat(cfg.content or {}, '\n'), order)
+  local archives = table.concat(cfg['fallback-archive'] or {}, '\n')
+  hold(name, 'the archives', archives, `Morrowind.bsa\n{archiveOrder}`)
+end
+
+do
+  local entries = text.parseIni(retailText).entries
+  local name = `importMaps: a retail INI's settings ({retail.settings} of {#retail.lines} lines)`
+
+  workload(
+    name,
+    function(): unknown return importer.importMaps({}, entries, { archives = false }) end,
+    function(result: unknown) holdFallback(name, (result :: importer.Result).cfg) end
+  )
+
+  local cfg = text.parseCfg(cfgText)
+  local over = `importMaps: the same over a cfg ({#cfgLines} lines)`
+
+  workload(
+    over,
+    function(): unknown return importer.importMaps(cfg, entries, { archives = false }) end,
+    function(result: unknown)
+      local map = (result :: importer.Result).cfg
+      holdFallback(over, map)
+      hold(over, 'the content kept from the cfg', #map.content, 16)
+      hold(over, 'the cfg\'s own fallback settings', #cfg.fallback, 64)
+    end
+  )
+end
+
+do
+  local entries = text.parseIni(installText).entries
+  local nowhere = jess.fs.join(root, 'nowhere', 'Morrowind.ini')
+  local name = `importMaps: a load order of {ContentFiles}, none of it on disk`
+  local options = { archives = false, gameFiles = true, iniPath = nowhere }
+  local result: importer.Result?
+
+  workload(
+    name,
+    function(): unknown
+      -- The import logs the file its load order stops at; `capture` keeps it off the terminal.
+      log.capture(function() result = importer.importMaps({}, entries, options) end)
+      return result
+    end,
+    function(given: unknown)
+      local warnings = (given :: importer.Result).warnings
+      hold(name, 'the number of warnings', #warnings, 1)
+      hold(name, 'the file the load order stopped at', warnings[1].file, Masters[1])
+    end
+  )
+end
+
+local function imports(name: string, options: importer.PathsOptions, order: string, events: number)
+  workload(
+    name,
+    function(): unknown return importer.importPaths(options) end,
+    function(given: unknown)
+      local result = given :: importer.Result
+      holdImport(name, result.cfg, order)
+      hold(name, 'the number of events', #result.events, events)
+      hold(name, 'the number of warnings', #result.warnings, 0)
+    end
+  )
+end
+
+imports(
+  `importPaths: the game's layout ({ContentFiles} content files, {Archives + 1} archives)`,
+  { ini = plainIni, gameFiles = true },
+  plainOrder,
+  1
+)
+
+imports(
+  'importPaths: the game\'s layout, verbose',
+  { ini = plainIni, gameFiles = true, verbose = true },
+  plainOrder,
+  ContentFiles + Archives + 2
+)
+
+imports(
+  `importPaths: a modded layout (a cfg of {DataFolders} data folders)`,
+  { ini = moddedIni, cfg = moddedCfg, gameFiles = true },
+  moddedOrder,
+  1
+)
+
+local function commanded(
+  name: string,
+  request: commands.Request,
+  writer: commands.Writer,
+  order: string,
+  holds: (result: commands.Result) -> ()
+)
+  workload(name, function(): unknown return commands.import(request) end, function(given: unknown)
+    local result = given :: commands.Result
+    hold(name, 'the outcome', result.outcome, 'previewed')
+    hold(name, 'the writer', result.writer, writer)
+    holdImport(name, assert(result.imported), order)
+    holds(result)
+  end)
+end
+
+--- How many of a cfg's lines set `key`.
+local function lines(cfg: string?, key: string): number
+  local prefix = `{key}=`
+  local written = string.split(cfg or '', '\n')
+  return #[for line in written if string.sub(line, 1, #prefix) == prefix => line]
+end
+
+commanded(
+  'commands.import: a preview with no cfg (the new writer)',
+  { ini = plainIni, gameFiles = true },
+  'new',
+  plainOrder,
+  function(result: commands.Result)
+    hold('new', 'the content lines written', lines(result.text, 'content'), ContentFiles)
+    hold('new', 'the data folder written', (result.imported or {}).data[1], plainData)
+  end
+)
+
+commanded(
+  'commands.import: a dry run in place (the preserved writer)',
+  { ini = moddedIni, cfg = moddedCfg, gameFiles = true, inPlace = true, dryRun = true },
+  'preserved',
+  moddedOrder,
+  function(result: commands.Result)
+    local written = result.text or ''
+    hold('preserved', 'the content lines written', lines(written, 'content'), ContentFiles)
+    hold('preserved', 'the first comment, kept', string.sub(written, 1, #cfgLines[1]), cfgLines[1])
+    hold('preserved', 'the data lines written', lines(written, 'data'), DataFolders + 1)
+    hold('preserved', 'the cfg, which a dry run leaves alone', jess.fs.read(moddedCfg), cfgText)
+  end
+)
+
+commanded(
+  'commands.import: a dry run to another folder (the resolved writer)',
+  {
+    ini = moddedIni,
+    cfg = moddedCfg,
+    gameFiles = true,
+    output = jess.fs.join(root, 'elsewhere', 'openmw.cfg'),
+    dryRun = true,
+  },
+  'resolved',
+  moddedOrder,
+  function(result: commands.Result)
+    hold('resolved', 'the content lines written', lines(result.text, 'content'), ContentFiles)
+    hold('resolved', 'the data lines written', lines(result.text, 'data'), DataFolders + 1)
+    hold('resolved', 'the comments written', string.find(result.text or '', '#', 1, true), nil)
+  end
+)
+
+do
+  local argv = {
+    '--ini',
+    plainIni,
+    `--cfg={moddedCfg}`,
+    '-gfv',
+    '-d',
+    plainData,
+    '--encoding',
+    'win1252',
+    '-o=out.cfg',
+    '--data-local',
+    'local-data',
+    '-rresources',
+    '--user-data=user-data',
+    '--token-userconfig',
+    '/cfg',
+    '--token-userdata=/data',
+    '--token-local',
+    '/opt/openmw',
+    '--token-global',
+    '/usr/share/games',
+  }
+  local name = `cli.parse: every flag that sets a field ({#argv} arguments)`
+
+  workload(name, function(): unknown return (cli.parse(argv)) end, function(given: unknown)
+    local command = given :: { command: string, request: commands.Request }
+    local request = command.request
+    hold(name, 'the command', command.command, 'import')
+    hold(name, 'the ini', request.ini, plainIni)
+    hold(name, 'the cfg', request.cfg, moddedCfg)
+    hold(name, 'the data folder', (request.dataDirs or {})[1], plainData)
+    hold(name, 'the switches', request.gameFiles and request.fonts and request.verbose, true)
+    hold(name, 'the output', request.output, 'out.cfg')
+    hold(name, 'the resources', request.resources, 'resources')
+    hold(name, 'the last token', (request.tokens or {}).globalPath, '/usr/share/games')
+  end)
+end
+
+do
+  local result = commands.import { ini = plainIni, gameFiles = true, verbose = true }
+  local written = commands.import {
+    ini = plainIni,
+    gameFiles = true,
+    verbose = true,
+    output = jess.fs.join(root, 'plain', 'openmw.cfg'),
+    dryRun = true,
+  }
+  local progress = ContentFiles + Archives + 3
+  local name = `cli.transcript: a verbose preview ({progress} lines of progress)`
+
+  workload(name, function(): unknown return cli.transcript(result) end, function(given: unknown)
+    local transcript = given :: { cli.Line }
+    local errors = #[for line in transcript if line.stream == 'stderr' => line]
+    hold(name, 'the number of lines', #transcript, progress + 1)
+    hold(name, 'the lines of progress', errors, progress)
+    hold(name, 'the cfg, last', transcript[#transcript].text, result.text)
+  end)
+
+  local rendered = `cli.render: a verbose run to a file ({progress} lines)`
+
+  workload(rendered, function(): unknown return cli.render(written) end, function(given: unknown)
+    local output = given :: string
+    hold(rendered, 'the number of lines', #string.split(output, '\n'), progress + 1)
+    hold(rendered, 'the first line', string.sub(output, 1, 15), 'load ini file: ')
+  end)
+end
+
+do
+  local masters = [for index in range(1, 16) => `Master {index}.esm`]
+  local fields: { string } = { 'HEDR' .. string.pack('<I4', 300) .. string.rep('\0', 300) }
+
+  for index, master in masters do
+    table.insert(fields, 'MAST' .. string.pack('<I4', #master + 1) .. master .. '\0')
+    table.insert(fields, 'DATA' .. string.pack('<I4', 8) .. string.pack('<I8', index * 4096))
+  end
+
+  local record = table.concat(fields)
+  local header = 'TES3' .. string.pack('<I4', #record) .. string.rep('\0', 8) .. record
+  local plugin = file(header .. string.rep('\0', 4096), 'plugins', 'Patch.esp')
+  local expected = table.concat(masters, '\n')
+  local name = `readPluginHeader: {#masters} masters`
+
+  workload(
+    name,
+    function(): unknown return importer.readPluginHeader(plugin) end,
+    function(given: unknown)
+      local read = given :: { name: string, masters: { string } }
+      hold(name, 'the name', read.name, 'Patch.esp')
+      hold(name, 'the masters', table.concat(read.masters, '\n'), expected)
+    end
+  )
+end
+
+do
+  local cfg = importer.importPaths({ ini = plainIni, gameFiles = true }).cfg
+  local target = jess.fs.join(root, 'plain', 'openmw.cfg')
+  local keys = { 'content', 'data', 'encoding', 'fallback', 'fallback-archive', 'no-sound' }
+  local settings = sum[for key in keys => #cfg[key]]
+  local name = `renderCfg: an import's settings ({settings} lines)`
+
+  workload(
+    name,
+    function(): unknown return importer.renderCfg(cfg, target) end,
+    function(given: unknown)
+      local rendered = given :: string
+      hold(name, 'the number of lines', #string.split(rendered, '\n'), settings + 2)
+      hold(name, 'the content lines', lines(rendered, 'content'), ContentFiles)
+      hold(name, 'the file, which rendering leaves unwritten', jess.fs.exists(target), false)
+    end
+  )
+end
+
+if program and package and packagePath then
+  local expected = commands.import({ ini = plainIni, gameFiles = true }).text
+  local arguments =
+    { 'package', 'run', package, '--package-path', packagePath, '--trusted', '--' }
+  table.move({ '--ini', plainIni, '--game-files' }, 1, 3, #arguments + 1, arguments)
+  local name = 'the command, as a new process: a preview of the game\'s layout'
+
+  workload(name, function(): unknown
+    local result, message = process.run(program, arguments, { stdout = 'capture', stderr = 'null' })
+    return result or message
+  end, function(given: unknown)
+    local result = given :: { success: boolean, stdout: string? }
+    hold(name, 'whether the run succeeded', result.success, true)
+    hold(name, 'the cfg it printed', result.stdout, expected)
+  end)
+end
+
+fs.remove(root, { recursive = true })
+
+for _, row in rows do
+  print(`{row.name}\t{string.format('%.9f', row.seconds)}`)
+end
+
+return rows
