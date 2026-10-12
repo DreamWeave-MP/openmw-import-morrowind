@@ -320,6 +320,20 @@ suite.describe('documents and writers', function()
     expect(text.renderDocument(document)).toBe 'key=value # kept\ndata=Configured\nconfig=sub\n\n# tail\nencoding=win1252\nno-sound=1\ndata=Configured\ndata=Explicit\n'
   end)
 
+  suite.it('adds a data folder the chain doesn\'t have, and not again as the path it resolved to', function()
+    jess.fs.write(cfgPath, 'encoding=win1252\ndata=old\n')
+    local document = ini.loadDocument(cfgPath)
+    local resolved = assert(fs.canonicalize(root))
+    local mods, old = jess.fs.join(resolved, 'mods'), jess.fs.join(resolved, 'old')
+    ini.applyUpdate(
+      document,
+      { cfg = { data = { old, 'mods', mods, 'other', mods } }, changedKeys = { 'data' } },
+      {}
+    )
+    expect(text.renderDocument(document)).toBe 'encoding=win1252\ndata=old\ndata=mods\ndata=other\n'
+    expect(document.config:values 'data').toEqual { 'old', 'mods', 'other' }
+  end)
+
   suite.it('replaces a singleton in every place it was written, and gates the lists', function()
     jess.fs.write(
       cfgPath,
