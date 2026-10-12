@@ -22,6 +22,8 @@ type Search = {
 type Resolved = {
   name: string,
   lower: string,
+  --- Whether it loads after the masters: anything but an `.esm`.
+  plugin: boolean,
   --- Where the file was found, as the search spelled it.
   candidate: string,
   --- The path the filesystem names the file by, asked for when an event or the load order needs
@@ -185,9 +187,11 @@ local function resolve(
     local metadata = storage.stat(candidate)
     if not metadata then continue end
 
+    local lower = string.lower(file)
     local hit: Resolved = {
       name = file,
-      lower = string.lower(file),
+      lower = lower,
+      plugin = string.sub(lower, -4) ~= '.esm',
       candidate = candidate,
       seconds = metadata.modifiedSeconds or 0,
       nanoseconds = metadata.modifiedNanoseconds or 0,
@@ -218,10 +222,7 @@ end
 --- case-insensitively, then by canonical path. Only two spellings of one name, found as two
 --- files changed at one time, come down to their paths.
 local function before(left: Resolved, right: Resolved): boolean
-  local leftPlugin, rightPlugin =
-    string.sub(left.lower, -4) ~= '.esm', string.sub(right.lower, -4) ~= '.esm'
-
-  if leftPlugin ~= rightPlugin then return rightPlugin end
+  if left.plugin ~= right.plugin then return right.plugin end
   if left.seconds ~= right.seconds then return left.seconds < right.seconds end
   if left.nanoseconds ~= right.nanoseconds then return left.nanoseconds < right.nanoseconds end
   if left.lower ~= right.lower then return left.lower > right.lower end
