@@ -69,9 +69,11 @@ as two files changed at the same instant, come down to their paths, so the path 
 when a comparison gets that far (or when a verbose import reports the file, which is why that row
 stands still). Between the commit before it and the commit that made it, the game's layout went
 from 8031 µs to 2439 µs, and it is most of every row that imports files. The sort decides whether
-a file is a master when it is
-found, not twice at every comparison: 1.14x more on the same row, measured between the two
-commits (2439 µs to 2133 µs). The INI's numbered entries (`GameFile0`, `Archive 0`) were collected,
+a file is a master when it is found, not twice at every comparison, and on its own that is too
+little to tell from noise: between the two commits the same row went from 2439 µs to 2133 µs
+(1.14x) when the change was made, and from 2115 µs to 1971 µs (1.07x) and from 2113 µs to 2082 µs
+(1.02x) in two later holds of the lock, of four rounds and of eight, against the 5 percent this
+table calls no change. The INI's numbered entries (`GameFile0`, `Archive 0`) were collected,
 sorted as a whole, and then appended index by index through `table.move`, which fits its
 destination to the new length on every call and so copied the list each time; their keys are
 grouped by index as they are met and their values appended one by one, which is the load order
