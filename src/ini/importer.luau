@@ -112,7 +112,7 @@ local function copy(map: MultiMap): MultiMap
   local result: MultiMap = {}
 
   for key, values in map do
-    result[key] = values[1:#values]
+    result[key] = table.move(values, 1, #values, 1, {})
   end
 
   return result
