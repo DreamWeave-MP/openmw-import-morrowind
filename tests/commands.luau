@@ -204,11 +204,8 @@ suite.describe('a preview', function()
     file('', 'Data Files', 'Morrowind.bsa')
     file('', 'Data Files', 'Extra.bsa')
     local result = commands.import { ini = ini, gameFiles = true, verbose = true }
-    local kinds, paths = {}, {}
-
-    for index, event in result.events do
-      kinds[index], paths[index] = event.kind, event.path
-    end
+    local kinds = [for event in result.events => event.kind]
+    local paths = [for event in result.events => event.path]
 
     expect(kinds).toEqual {
       'contentFileResolved',
