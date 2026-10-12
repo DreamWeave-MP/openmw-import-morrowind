@@ -700,6 +700,26 @@ do
   )
 end
 
+do
+  local folders = [for index in range(1, 32) => `Added {index}`]
+  local update = { cfg = { data = folders }, changedKeys = { 'data' } }
+  local loaded = importer.loadDocument(moddedCfg)
+  local settings = #loaded.entries
+  local name = `loadDocument and applyUpdate: {#folders} data folders the cfg doesn't have`
+
+  workload(name, function(): unknown
+    local document = importer.loadDocument(moddedCfg)
+    importer.applyUpdate(document, update, {})
+    return document
+  end, function(given: unknown)
+    local document = given :: typeof(loaded)
+    local data = document.config:values 'data'
+    hold(name, 'the chain\'s data folders', #data, DataFolders + #folders)
+    hold(name, 'the last of them', data[#data], folders[#folders])
+    hold(name, 'the cfg\'s settings, with the folders added', #document.entries, settings + #folders)
+  end)
+end
+
 if program and package and packagePath then
   local expected = commands.import({ ini = plainIni, gameFiles = true }).text
   local arguments =
