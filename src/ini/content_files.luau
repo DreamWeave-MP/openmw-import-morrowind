@@ -22,7 +22,11 @@ type Search = {
 type Resolved = {
   name: string,
   lower: string,
-  path: string,
+  --- Where the file was found, as the search spelled it.
+  candidate: string,
+  --- The path the filesystem names the file by, asked for when an event or the load order needs
+  --- it: resolving one costs more than everything else an import does for a file.
+  canonical: string?,
   seconds: number,
   nanoseconds: number,
   search: number,
@@ -158,6 +162,13 @@ local function usedDirectories(
   return result
 end
 
+--- A found file's canonical path, resolved the first time it is asked for.
+local function canonical(hit: Resolved): string
+  local path = hit.canonical or storage.canonical(hit.candidate, true)
+  hit.canonical = path
+  return path
+end
+
 local function resolve(
   file: string,
   searches: { Search },
@@ -174,25 +185,24 @@ local function resolve(
     local metadata = storage.stat(candidate)
     if not metadata then continue end
 
-    -- A content file's canonical path is part of its sort key; an archive's only feeds the event.
-    local path = if not archives or verbose then storage.canonical(candidate, true) else candidate
-
-    if verbose then
-      table.insert(events, {
-        kind = if archives then 'archiveResolved' else 'contentFileResolved',
-        path = path,
-        modified = if archives then nil else metadata.modifiedSeconds or 0,
-      })
-    end
-
-    return {
+    local hit: Resolved = {
       name = file,
       lower = string.lower(file),
-      path = path,
+      candidate = candidate,
       seconds = metadata.modifiedSeconds or 0,
       nanoseconds = metadata.modifiedNanoseconds or 0,
       search = index,
     }
+
+    if verbose then
+      table.insert(events, {
+        kind = if archives then 'archiveResolved' else 'contentFileResolved',
+        path = canonical(hit),
+        modified = if archives then nil else metadata.modifiedSeconds or 0,
+      })
+    end
+
+    return hit
   end
 
   return nil
@@ -205,7 +215,8 @@ local function isPluginName(file: string): boolean
 end
 
 --- Vanilla order: masters first, then by modification time, then by name in reverse, ASCII
---- case-insensitively, then by path.
+--- case-insensitively, then by canonical path. Only two spellings of one name, found as two
+--- files changed at one time, come down to their paths.
 local function before(left: Resolved, right: Resolved): boolean
   local leftPlugin, rightPlugin =
     string.sub(left.lower, -4) ~= '.esm', string.sub(right.lower, -4) ~= '.esm'
@@ -214,8 +225,9 @@ local function before(left: Resolved, right: Resolved): boolean
   if left.seconds ~= right.seconds then return left.seconds < right.seconds end
   if left.nanoseconds ~= right.nanoseconds then return left.nanoseconds < right.nanoseconds end
   if left.lower ~= right.lower then return left.lower > right.lower end
+  if left.candidate == right.candidate then return false end
 
-  return left.path < right.path
+  return canonical(left) < canonical(right)
 end
 
 local function import(request: Request, archives: boolean)
