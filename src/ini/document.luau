@@ -78,8 +78,8 @@ local function apply(
 
       config:append('data', directory)
       append(document, 'data', { directory })
-      local entries = config:entries()
-      directories[entries[#entries].resolved :: string] = true
+      -- The folder just appended is the chain's last `data`, so the last one's path is its path.
+      directories[config:path('data') :: string] = true
     end
   end
 
