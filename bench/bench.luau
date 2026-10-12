@@ -7,13 +7,27 @@
 -- [package] [package path]`, on a release build. Prints one line per workload: its name, a tab,
 -- and the seconds one call takes. Every workload's result is compared with what the generator of
 -- its input says it must be, outside the time, so a path that stopped doing the work fails here.
-local cli = require '@openmw-import-morrowind/cli'
-local commands = require '@openmw-import-morrowind/commands'
+-- The first line is what a process pays once, before any of that: the package's modules read,
+-- compiled, and run for the first time, which a filter of `load` times alone.
 local fs = require '@dream/fs'
-local importer = require '@openmw-import-morrowind'
 local log = require '@jess/log'
 local process = require '@dream/process'
 local text = require '@dream-ini'
+
+-- Everything the package's modules require of other packages, so that the time below is theirs.
+require '@dream-ini/document'
+require '@dream-ini/options'
+require '@dream-ini/parser'
+require '@dream-ini/storage'
+require '@openmw-config'
+require '@openmw-config/paths'
+require '@openmw-config/text'
+
+local loadStart = os.clock()
+local importer = require '@openmw-import-morrowind'
+local commands = require '@openmw-import-morrowind/commands'
+local cli = require '@openmw-import-morrowind/cli'
+local loadSeconds = os.clock() - loadStart
 
 -- A build without the verified toolchain runs Luau slower than a release does, so a number from
 -- one says nothing about what ships.
@@ -21,12 +35,24 @@ if not jess.bench.verified then
   error('import bench: this jess was built without the verified toolchain: measure on a release build', 0)
 end
 
---- The arguments: a folder to write into; a filter on the workload names (`''` for all); and,
---- for the whole run of the command, the jess to run, the package's folder, and the folder its
---- dependencies are found in. Without the last three that workload is left out.
+--- The arguments: a folder to write into; a filter on the workload names (`''` for all; several
+--- parts of names with `|` between them for the workloads that have any); and, for the whole
+--- run of the command, the jess to run, the package's folder, and the folder its dependencies are
+--- found in. Without the last three that workload is left out.
 local scratch: string, filter: string? = ...
 local program: string?, package: string?, packagePath: string? = select(3, ...)
-local only = if filter and filter ~= '' then filter else nil
+local only = if filter and filter ~= '' then string.split(filter, '|') else nil
+local LoadName = 'load: the package\'s modules, required for the first time'
+
+--- Whether the filter keeps the workload called `name`.
+local function wanted(name: string): boolean
+  return not only or any[for part in only if string.find(name, part, 1, true) => true]
+end
+
+if filter == 'load' then
+  print(`{LoadName}\t{string.format('%.9f', loadSeconds)}`)
+  return { { name = LoadName, seconds = loadSeconds } }
+end
 
 --- Everything the bench writes goes below this folder, which it removes when it is done.
 local root = jess.fs.join(scratch, 'openmw-import-morrowind-bench')
@@ -35,6 +61,8 @@ type MultiMap = importer.MultiMap
 type Row = { name: string, seconds: number }
 
 local rows: { Row } = {}
+
+if wanted(LoadName) then table.insert(rows, { name = LoadName, seconds = loadSeconds }) end
 
 local function median(samples: { number }): number
   table.sort(samples)
@@ -70,7 +98,7 @@ local function measure(body: () -> unknown, verify: (result: unknown) -> ()): nu
 end
 
 local function workload(name: string, body: () -> unknown, verify: (result: unknown) -> ())
-  if only and not string.find(name, only, 1, true) then return end
+  if not wanted(name) then return end
 
   table.insert(rows, { name = name, seconds = measure(body, verify) })
 end
