@@ -158,7 +158,7 @@ table.freeze(Spec)
 local Prefix = 'dream.ini: '
 
 --- The script position Luau puts in front of a failed assertion's message.
-local Position = '^%S+%.luau:%d+: '
+local Position = '^%S+%.jsl:%d+: '
 
 --- The folder a cfg's relative paths are read from: its own, or the working directory for a bare
 --- name (`cfg_parent`).

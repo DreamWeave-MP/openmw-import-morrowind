@@ -3,7 +3,7 @@
 -- maps and over files, the command's request with each of its three writers, the command line's
 -- parse and what it prints, a plugin's header, and a whole run of the command as a new process.
 -- Run by `jess run --package . --package-path .. --capability filesystem.read --capability
--- filesystem.write [--capability process.spawn] bench/bench.luau <scratch> [filter] [jess]
+-- filesystem.write [--capability process.spawn] bench/bench.jsl <scratch> [filter] [jess]
 -- [package] [package path]`, on a release build. Prints one line per workload: its name, a tab,
 -- and the seconds one call takes. Every workload's result is compared with what the generator of
 -- its input says it must be, outside the time, so a path that stopped doing the work fails here.

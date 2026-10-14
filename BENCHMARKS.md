@@ -1,6 +1,6 @@
 # Benchmarks
 
-`bench/bench.luau` times the package through what it exports: imports over parsed maps and over
+`bench/bench.jsl` times the package through what it exports: imports over parsed maps and over
 files, the command's request with each of its three writers, the command line's parse and what it
 prints, a plugin's header, an update of a loaded cfg, and a whole run of the command as a new
 process. It writes its own installs below the scratch folder it is given (the game's layout, with
@@ -14,7 +14,7 @@ out from the files themselves, the archives, the events, and the text each write
 ```sh
 jess run --package jpk/openmw-import-morrowind --package-path jpk \
   --capability filesystem.read --capability filesystem.write --capability process.spawn \
-  jpk/openmw-import-morrowind/bench/bench.luau <scratch folder> [filter] \
+  jpk/openmw-import-morrowind/bench/bench.jsl <scratch folder> [filter] \
   [jess] [package folder] [package path]
 ```
 
