@@ -5,7 +5,7 @@ id = "org.dreamweave.openmw-import-morrowind"
 version = "0.1.0"
 jess_api = "1"
 default_target = "openmw-import-morrowind"
-include = ["src"]
+include = ["src", "tests"]
 tests = ["tests/run.jsl", "tests/commands.jsl", "tests/cli.jsl", "tests/style.jsl"]
 
 [dependencies]
@@ -42,4 +42,4 @@ exports = [
 kind = "command"
 command = "openmw-import-morrowind"
 entry = "src/main.jsl"
-capabilities = ["filesystem.read", "filesystem.write"]
+capabilities = ["filesystem.read", "filesystem.write", "process.stdio"]
