@@ -103,3 +103,57 @@ entries that tie on everything differently from `table.sort`, which the `content
 show. A listing of each folder in place of a `stat` for each file would not find a name the way
 the filesystem does where it ignores case. The writers' rows are `openmw-config`'s validation of
 every setting, about a microsecond each.
+
+## Which modules are native, and why
+
+Jess compiles to machine code only what is marked (`--!native` on a module, `@native` on one
+function), and every load pays for what is marked. A module carries `--!native` when a row below
+spends its time there and the module is small (12 KB or less); a larger module carries `@native`
+on the functions the row spends its time in, and nothing else.
+
+Measured 2026-10-15 with `jess 0.1.0`, the verified release build of jess `07c38cb` on l3i
+2.0.3, on the i7-10870H, the one-minute load 1.11 and 1.16 at the start of the two
+sessions. In each session the bench ran alternately on this package and on a copy of it with
+every module marked, three fresh runs of `bench/bench.jsl` each, every run's row the median of
+its batches; a column is the median of the three, and a ratio is against the all-marked runs of
+the same session. Which functions a row spends its time in comes from `jess run --profile` of
+that row alone, unmarked. The load cost is a fresh `jess run --package <this package>
+--package-path jpk` of a script that only requires `@openmw-import-morrowind`, the two sides alternating, the
+median of five each after one warm-up.
+
+| Requiring `@openmw-import-morrowind` | All marked | This state |
+| --- | ---: | ---: |
+| Unmarked | 0.066 s | 0.058 s |
+| Final | 0.064 s | 0.062 s |
+
+| Row | All marked (ms) | Unmarked / all marked | Final (ms) | Final / all marked |
+| --- | ---: | ---: | ---: | ---: |
+| load: the package's modules, required for the first time | 13.52 | 0.342× | 9.717 | 0.719× |
+| importMaps: a retail INI's settings (373 of 608 lines) | 0.09927 | **1.167×** | 0.1039 | 1.047× |
+| importMaps: the same over a cfg (100 lines) | 0.1041 | **1.057×** | 0.1092 | 1.050× |
+| importMaps: a load order of 256, none of it on disk | 0.2429 | **1.271×** | 0.2594 | **1.068×** |
+| importPaths: the game's layout (256 content files, 9 archives) | 1.784 | **1.207×** | 1.859 | 1.042× |
+| importPaths: the game's layout, verbose | 6.858 | **1.127×** | 7.184 | 1.048× |
+| importPaths: a modded layout (a cfg of 8 data folders) | 4.563 | **1.147×** | 4.695 | 1.029× |
+| commands.import: a preview with no cfg (the new writer) | 2.256 | **1.189×** | 2.313 | 1.025× |
+| commands.import: a dry run in place (the preserved writer) | 5.525 | **1.224×** | 5.679 | 1.028× |
+| commands.import: a dry run to another folder (the resolved writer) | 5.884 | **1.134×** | 6.034 | 1.025× |
+| cli.parse: every flag that sets a field (20 arguments) | 0.00639 | **1.814×** | 0.01069 | **1.674×** |
+| cli.transcript: a verbose preview (267 lines of progress) | 0.1277 | **1.305×** | 0.1563 | **1.224×** |
+| cli.render: a verbose run to a file (267 lines) | 0.1734 | **1.218×** | 0.2074 | **1.196×** |
+| readPluginHeader: 16 masters | 0.04059 | **1.143×** | 0.04034 | 0.994× |
+| renderCfg: an import's settings (641 lines) | 0.3729 | **1.099×** | 0.3736 | 1.002× |
+| loadDocument and applyUpdate: 32 data folders the cfg doesn't have | 0.2559 | 1.024× | 0.2577 | 1.007× |
+
+What carries the directive (every module here is one a row spends its time in, unmarked):
+
+- Whole: `ini/config`, `ini/content_files`, `ini/importer`, `ini/plugin_header`, `ini/storage`.
+- Unmarked: `cli`, `commands`, `ini/document`, `ini/fallback_keys`, `ini/tokens`, `ini/types`,
+  `ini/writers`, `init`, `main`.
+
+`cli` parses a command line and prints what a run did, once a run, and is never marked, so its
+three rows are slower than all marked by rule: parsing every flag (1.67x, of a 6 µs call) and the
+verbose transcript and render of a run (1.22x and 1.20x, of 0.13 ms and 0.17 ms). The fourth,
+`importMaps` over a load order of 256 (1.068x), is inside this protocol's noise: two
+all-marked copies of dream-archive, measured the same way, put 10 of 109 rows more than 5% apart,
+the 95th percentile at 1.074x.
