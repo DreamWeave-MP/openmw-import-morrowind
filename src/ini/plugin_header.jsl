@@ -50,7 +50,7 @@ local function read(path: string, encoding: string?): { name: string, masters: {
   end
 
   check(offset == size, 'trailing partial subrecord header in TES3 record')
-  return { name = jess.fs.fileName(path) or path, masters = masters }
+  return { name = fs.fileName(path) or path, masters = masters }
 end
 
 return table.freeze { read = read }

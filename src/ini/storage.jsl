@@ -2,19 +2,20 @@
 --!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- The filesystem questions the import asks, each one host call.
+local fs = require '@dream/fs'
 local text = require '@dream-ini/storage'
 local bytes = require '@dream/bytes'
 
-local function stat(path: string) return jess.fs.stat(path) end
+local function stat(path: string) return fs.stat(path) end
 
 local function resolve(path: string, base: string?): string
   if not base then return path end
 
-  return jess.fs.join(base, path)
+  return fs.join(base, path)
 end
 
 --- Whether `path` is relative under the host's rules: joining it to a folder changes it.
-local function isRelative(path: string): boolean return jess.fs.join('.', path) ~= path end
+local function isRelative(path: string): boolean return fs.join('.', path) ~= path end
 
 local function ioMessage(path: string, message: string): string
   local displayPath = if utf8.len(path) then path else bytes.decode(path, 'utf-8')

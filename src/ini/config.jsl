@@ -4,6 +4,7 @@
 -- Multimap output is deliberately normalized, unlike a preserved document. Only explicit data
 -- entries belong to the map; resources/vfs and data-local are composed by the Context, not here.
 local types, parser = require './types', require '@dream-ini/parser'
+local fs = require '@dream/fs'
 local openmw = require '@openmw-config'
 local paths = require '@openmw-config/paths'
 local text = require '@openmw-config/text'
@@ -14,7 +15,15 @@ local Stamp = '# OpenMW-Config Serializer Version: 3.0.0\n'
 local function normalize(cfg: MultiMap, directory: string?, tokens: openmw.Tokens?): MultiMap
   if not directory then return cfg end
 
-  local source = jess.fs.join(paths.absolute(if directory == '' then jess.fs.cwd() else directory), 'openmw.cfg')
+  local folder = directory
+  if folder == '' then
+    local current, problem = fs.cwd()
+    if not current then error(problem, 0) end
+
+    folder = current
+  end
+
+  local source = fs.join(paths.absolute(folder), 'openmw.cfg')
   local result: MultiMap = {}
   for _, key in parser.keys(cfg) do
     if key == 'config' or string.lower(key) == 'replace' then continue end

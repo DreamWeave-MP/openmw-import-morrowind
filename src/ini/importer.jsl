@@ -244,7 +244,7 @@ local function importPaths(given: types.PathsOptions): Result
   local read = options.read('ini.importPaths', rest, PathsSpec, { 'ini' })
   local import = readImport('ini.importPaths', read)
   local iniPath, cfgPath = read.ini :: string, read.cfg :: string?
-  local cfgDir = if cfgPath then jess.fs.parent(cfgPath) or '' else nil
+  local cfgDir = if cfgPath then fs.parent(cfgPath) or '' else nil
   -- Relative data folders resolve from the folder the caller names, else from the cfg's folder
   -- when there is a cfg.
   local dataDirBase = (read.dataDirBase :: string?)

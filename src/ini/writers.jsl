@@ -6,13 +6,14 @@
 local types, options, config, document =
   require './types', require '@dream-ini/options', require './config', require './document'
 local configuration = require '@openmw-config'
+local fs = require '@dream/fs'
 type MultiMap = types.MultiMap
 type Update = types.Update
 type Document = document.Document
 
 --- The folder an output's document belongs to: the file's folder, or the working directory for a
 --- bare name (`save_cfg_output_to_path`).
-local function directoryOf(path: string): string return jess.fs.parent(path) or '' end
+local function directoryOf(path: string): string return fs.parent(path) or '' end
 
 --- `cfg` as the text of a new openmw.cfg at `path`, with every value spelled as given, in key
 --- order, ending in openmw-config's serializer stamp (`serialize_cfg_output`). `path` is the file

@@ -55,7 +55,7 @@ if filter == 'load' then
 end
 
 --- Everything the bench writes goes below this folder, which it removes when it is done.
-local root = jess.fs.join(scratch, 'openmw-import-morrowind-bench')
+local root = fs.join(scratch, 'openmw-import-morrowind-bench')
 
 type MultiMap = importer.MultiMap
 type Row = { name: string, seconds: number }
@@ -306,16 +306,21 @@ fs.remove(root, { recursive = true })
 
 --- A file below the bench's folder, its folders made, and its path.
 local function file(data: string, ...: string): string
-  local path = jess.fs.join(root, ...)
-  jess.fs.write(path, data)
+  local path = fs.join(root, ...)
+  local done, problem = fs.writeFile(path, data, { atomic = true, createParents = true })
+  if not done then error(problem, 0) end
   return path
 end
 
 --- A folder below the bench's folder, as the filesystem names it.
 local function folder(...: string): string
-  local path = jess.fs.join(root, ...)
-  jess.fs.createDir(path)
-  return assert(fs.canonicalize(path))
+  local path = fs.join(root, ...)
+  local done, problem = fs.mkdir(path, { recursive = true })
+  if not done then error(problem, 0) end
+  local canonical, problem = fs.canonicalize(path)
+  if not canonical then error(problem, 0) end
+
+  return canonical
 end
 
 --- A file an import found: the name the INI gives it and where it is.
@@ -351,8 +356,9 @@ for index = 0, ContentFiles - 1 do
   local name = contentFile(index)
   local home = if index < #Masters then moddedData else mods[index % DataFolders + 1]
   table.insert(plainFiles, { name = name, path = file('TES3', 'plain', 'Data Files', name) })
-  jess.fs.write(jess.fs.join(home, name), 'TES3')
-  table.insert(moddedFiles, { name = name, path = jess.fs.join(home, name) })
+  local done, problem = fs.writeFile(fs.join(home, name), 'TES3', { atomic = true, createParents = true })
+  if not done then error(problem, 0) end
+  table.insert(moddedFiles, { name = name, path = fs.join(home, name) })
 end
 
 for index = -1, Archives - 1 do
@@ -394,7 +400,11 @@ local function loadOrder(files: { Found }): string
   local keyed: { Keyed } = {}
 
   for _, found in files do
-    local metadata = assert(jess.fs.stat(found.path))
+    local metadata, problem = fs.stat(found.path)
+    if not metadata then error(problem, 0) end
+    local canonical, unresolved = fs.canonicalize(found.path)
+    if not canonical then error(unresolved, 0) end
+
     local lower = string.lower(found.name)
     table.insert(keyed, {
       name = found.name,
@@ -402,7 +412,7 @@ local function loadOrder(files: { Found }): string
       plugin = string.sub(lower, -4) ~= '.esm',
       seconds = metadata.modifiedSeconds or 0,
       nanoseconds = metadata.modifiedNanoseconds or 0,
-      path = assert(fs.canonicalize(found.path)),
+      path = canonical,
     })
   end
 
@@ -467,7 +477,7 @@ end
 
 do
   local entries = text.parseIni(installText).entries
-  local nowhere = jess.fs.join(root, 'nowhere', 'Morrowind.ini')
+  local nowhere = fs.join(root, 'nowhere', 'Morrowind.ini')
   local name = `importMaps: a load order of {ContentFiles}, none of it on disk`
   local options = { archives = false, gameFiles = true, iniPath = nowhere }
   local result: importer.Result?
@@ -565,7 +575,7 @@ commanded(
     hold('preserved', 'the content lines written', lines(written, 'content'), ContentFiles)
     hold('preserved', 'the first comment, kept', string.sub(written, 1, #cfgLines[1]), cfgLines[1])
     hold('preserved', 'the data lines written', lines(written, 'data'), DataFolders + 1)
-    hold('preserved', 'the cfg, which a dry run leaves alone', jess.fs.read(moddedCfg), cfgText)
+    hold('preserved', 'the cfg, which a dry run leaves alone', fs.readFileString(moddedCfg), cfgText)
   end
 )
 
@@ -575,7 +585,7 @@ commanded(
     ini = moddedIni,
     cfg = moddedCfg,
     gameFiles = true,
-    output = jess.fs.join(root, 'elsewhere', 'openmw.cfg'),
+    output = fs.join(root, 'elsewhere', 'openmw.cfg'),
     dryRun = true,
   },
   'resolved',
@@ -632,7 +642,7 @@ do
     ini = plainIni,
     gameFiles = true,
     verbose = true,
-    output = jess.fs.join(root, 'plain', 'openmw.cfg'),
+    output = fs.join(root, 'plain', 'openmw.cfg'),
     dryRun = true,
   }
   local progress = ContentFiles + Archives + 3
@@ -683,7 +693,7 @@ end
 
 do
   local cfg = importer.importPaths({ ini = plainIni, gameFiles = true }).cfg
-  local target = jess.fs.join(root, 'plain', 'openmw.cfg')
+  local target = fs.join(root, 'plain', 'openmw.cfg')
   local keys = { 'content', 'data', 'encoding', 'fallback', 'fallback-archive', 'no-sound' }
   local settings = sum[for key in keys => #cfg[key]]
   local name = `renderCfg: an import's settings ({settings} lines)`
@@ -695,7 +705,7 @@ do
       local rendered = given :: string
       hold(name, 'the number of lines', #string.split(rendered, '\n'), settings + 2)
       hold(name, 'the content lines', lines(rendered, 'content'), ContentFiles)
-      hold(name, 'the file, which rendering leaves unwritten', jess.fs.exists(target), false)
+      hold(name, 'the file, which rendering leaves unwritten', fs.exists(target), false)
     end
   )
 end

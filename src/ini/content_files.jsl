@@ -4,6 +4,7 @@
 -- Content files and fallback archives: the INI's sequential entries, resolved through the search
 -- folders (explicit, then the cfg's, then the INI's `Data Files`), sorted the way the launcher
 -- sorted them, with the folders that resolved something added to the cfg.
+local fs = require '@dream/fs'
 local types, parser, storage = require './types', require '@dream-ini/parser', require './storage'
 type MultiMap = types.MultiMap
 type Request = types.Request
@@ -121,7 +122,7 @@ local function searchPaths(request: Request): { Search }
   end
 
   local default =
-    storage.canonical(jess.fs.join(jess.fs.parent(request.iniPath) or '', 'Data Files'))
+    storage.canonical(fs.join(fs.parent(request.iniPath) or '', 'Data Files'))
   add(default, default, 'default')
   return result
 end
@@ -184,7 +185,7 @@ local function resolve(
   for index, search in searches do
     if not search.searchable then continue end
 
-    local prefix = search.prefix or string.sub(jess.fs.join(search.path, 'x'), 1, -2)
+    local prefix = search.prefix or string.sub(fs.join(search.path, 'x'), 1, -2)
     search.prefix = prefix
     local candidate = prefix .. file
     local metadata = storage.stat(candidate)
@@ -218,7 +219,7 @@ end
 local function isPluginName(file: string): boolean
   return not string.find(file, '/', 1, true)
     and not string.find(file, '\\', 1, true)
-    and jess.fs.isFileName(file)
+    and fs.isFileName(file)
 end
 
 --- Vanilla order: masters first, then by modification time, then by name in reverse, ASCII

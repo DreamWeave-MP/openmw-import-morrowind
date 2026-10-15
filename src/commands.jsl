@@ -45,6 +45,7 @@ its `outcome` saying how the run ended.
 ]]
 
 local document = require '@dream-ini'
+local fs = require '@dream/fs'
 local importer = require './ini/importer'
 local log = require '@jess/log'
 local options = require '@dream-ini/options'
@@ -162,7 +163,7 @@ local Position = '^%S+%.jsl:%d+: '
 --- The folder a cfg's relative paths are read from: its own, or the working directory for a bare
 --- name (`cfg_parent`).
 local function contextOf(path: string): string
-  local parent = jess.fs.parent(path)
+  local parent = fs.parent(path)
   return if parent and parent ~= '' then parent else '.'
 end
 
@@ -258,9 +259,9 @@ local function import(given: Request): Result
     changedKeys = {},
   }
 
-  if not jess.fs.exists(iniPath) then return result end
+  if not fs.exists(iniPath) then return result end
 
-  result.cfgMissing = if cfgPath then not jess.fs.exists(cfgPath) else false
+  result.cfgMissing = if cfgPath then not fs.exists(cfgPath) else false
   local encoding = read.encoding :: string?
 
   if encoding and not parser.encodingLabel(encoding) then

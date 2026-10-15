@@ -70,15 +70,17 @@ suite.describe('importMaps', function()
 end)
 
 suite.describe('importPaths', function()
-  local root = jess.fs.join(scratch, 'openmw-import-morrowind-paths')
-  local iniPath = jess.fs.join(root, 'Morrowind.ini')
-  local context = jess.fs.join(root, 'context')
-  local dataFiles = jess.fs.join(context, 'relative-data')
+  local root = fs.join(scratch, 'openmw-import-morrowind-paths')
+  local iniPath = fs.join(root, 'Morrowind.ini')
+  local context = fs.join(root, 'context')
+  local dataFiles = fs.join(context, 'relative-data')
 
   suite.beforeEach(function()
     fs.remove(root, { recursive = true })
-    jess.fs.write(iniPath, '[Game Files]\nGameFile0=Base.esm\n')
-    jess.fs.write(jess.fs.join(dataFiles, 'Base.esm'), 'TES3')
+    local done, problem = fs.writeFile(iniPath, '[Game Files]\nGameFile0=Base.esm\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
+    local done, problem = fs.writeFile(fs.join(dataFiles, 'Base.esm'), 'TES3', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
   end)
 
   local function import(extra: { [string]: unknown }): ini.Result
@@ -102,8 +104,9 @@ suite.describe('importPaths', function()
   end)
 
   suite.it('takes dataDirBase over the cfg\'s folder', function()
-    local cfgPath = jess.fs.join(root, 'elsewhere', 'openmw.cfg')
-    jess.fs.write(cfgPath, 'encoding=win1252\n')
+    local cfgPath = fs.join(root, 'elsewhere', 'openmw.cfg')
+    local done, problem = fs.writeFile(cfgPath, 'encoding=win1252\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     expect(import({ cfg = cfgPath }).warnings[1].kind).toBe 'missingGameFile'
     expect(import({ cfg = cfgPath, dataDirBase = context }).cfg.content).toEqual { 'Base.esm' }
   end)
@@ -118,8 +121,9 @@ suite.describe('importPaths', function()
   end)
 
   suite.it('reads a cfg\'s path tokens from the roots it is given, and refuses one without', function()
-    local cfgPath = jess.fs.join(root, 'openmw.cfg')
-    jess.fs.write(cfgPath, 'data="?userdata?/relative-data"\n')
+    local cfgPath = fs.join(root, 'openmw.cfg')
+    local done, problem = fs.writeFile(cfgPath, 'data="?userdata?/relative-data"\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     local result = import { cfg = cfgPath, dataDirs = {}, tokens = { userData = context } }
     expect(result.cfg.content).toEqual { 'Base.esm' }
     expect(result.cfg.data).toEqual { dataFiles }
@@ -134,12 +138,13 @@ suite.describe('importPaths', function()
 end)
 
 suite.describe('the INI\'s numbered entries', function()
-  local root = jess.fs.join(scratch, 'openmw-import-morrowind-entries')
-  local iniPath = jess.fs.join(root, 'Morrowind.ini')
+  local root = fs.join(scratch, 'openmw-import-morrowind-entries')
+  local iniPath = fs.join(root, 'Morrowind.ini')
 
   suite.beforeEach(function()
     fs.remove(root, { recursive = true })
-    jess.fs.createDir(jess.fs.join(root, 'Data Files'))
+    local done, problem = fs.mkdir(fs.join(root, 'Data Files'), { recursive = true })
+    if not done then error(problem, 0) end
   end)
 
   --- The archives an import of `entries` looks for, in the order it looks: none is there, so the
@@ -228,13 +233,15 @@ suite.describe('the INI\'s numbered entries', function()
 
     -- Every file is there but the one at index 10, which a walk of the keys in order meets third.
     for _, name in { 'Upper.esp', 'Mixed.esp', 'Second.esp', 'Spaced.esp', 'Padded.esp' } do
-      jess.fs.write(jess.fs.join(root, 'Data Files', name), 'TES3')
+      local done, problem = fs.writeFile(fs.join(root, 'Data Files', name), 'TES3', { atomic = true, createParents = true })
+      if not done then error(problem, 0) end
     end
 
     for index = 0, 12 do
       if index == 10 then continue end
 
-      jess.fs.write(jess.fs.join(root, 'Data Files', `Plugin{index}.esp`), 'TES3')
+      local done, problem = fs.writeFile(fs.join(root, 'Data Files', `Plugin{index}.esp`), 'TES3', { atomic = true, createParents = true })
+      if not done then error(problem, 0) end
       if index < 10 and index ~= 1 then table.insert(expected, `Plugin{index}.esp`) end
     end
 
@@ -259,34 +266,40 @@ suite.describe('the INI\'s numbered entries', function()
 end)
 
 suite.describe('the load order', function()
-  local root = jess.fs.join(scratch, 'openmw-import-morrowind-order')
-  local iniPath = jess.fs.join(root, 'Morrowind.ini')
-  local dataFiles = jess.fs.join(root, 'Data Files')
+  local root = fs.join(scratch, 'openmw-import-morrowind-order')
+  local iniPath = fs.join(root, 'Morrowind.ini')
+  local dataFiles = fs.join(root, 'Data Files')
 
   suite.beforeEach(function()
     fs.remove(root, { recursive = true })
-    jess.fs.createDir(dataFiles)
+    local done, problem = fs.mkdir(dataFiles, { recursive = true })
+    if not done then error(problem, 0) end
   end)
 
-  local function path(name: string): string return jess.fs.join(dataFiles, name) end
+  local function path(name: string): string return fs.join(dataFiles, name) end
 
   --- Files that are one file under several names, so the filesystem gives every name one time.
   local function together(first: string, ...: string)
-    jess.fs.write(path(first), 'TES3')
+    local done, problem = fs.writeFile(path(first), 'TES3', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
 
     for _, name in { ... } do
-      assert(fs.hardLink(path(first), path(name)))
+      local done, problem = fs.hardLink(path(first), path(name))
+      if not done then error(problem, 0) end
     end
   end
 
   --- A file the filesystem's clock puts after `earlier`, however coarse that clock is.
   local function after(earlier: string, name: string)
-    local first = assert(jess.fs.stat(path(earlier)))
+    local first, problem = fs.stat(path(earlier))
+    if not first then error(problem, 0) end
     local deadline, later = os.clock() + 10, false
 
     repeat
-      jess.fs.write(path(name), 'TES3')
-      local metadata = assert(jess.fs.stat(path(name)))
+      local done, problem = fs.writeFile(path(name), 'TES3', { atomic = true, createParents = true })
+      if not done then error(problem, 0) end
+      local metadata, problem = fs.stat(path(name))
+      if not metadata then error(problem, 0) end
       local seconds, was = metadata.modifiedSeconds or 0, first.modifiedSeconds or 0
       later = seconds > was
         or (seconds == was and (metadata.modifiedNanoseconds or 0) > (first.modifiedNanoseconds or 0))
@@ -345,23 +358,27 @@ suite.describe('the load order', function()
   suite.it('puts two files whose names differ only in case in the order of their paths', function()
     together('Twin.esp', 'Base.esm')
     -- A filesystem that doesn't tell the two names apart has one file here, and nothing to order.
-    if jess.fs.exists(path 'twin.esp') then return end
+    if fs.exists(path 'twin.esp') then return end
 
-    assert(fs.hardLink(path 'Twin.esp', path 'twin.esp'))
+    local done, problem = fs.hardLink(path 'Twin.esp', path 'twin.esp')
+    if not done then error(problem, 0) end
     expect(order { 'twin.esp', 'Base.esm', 'Twin.esp' }).toEqual { 'Base.esm', 'Twin.esp', 'twin.esp' }
     expect(order { 'Twin.esp', 'twin.esp', 'Base.esm' }).toEqual { 'Base.esm', 'Twin.esp', 'twin.esp' }
   end)
 
   suite.it('takes those paths as the filesystem names the files, not as it was asked for them', function()
     together('twin.esp', 'Base.esm')
-    if jess.fs.exists(path 'Twin.esp') then return end
+    if fs.exists(path 'Twin.esp') then return end
 
     -- `Twin.esp` is a link to the same file in a folder whose name comes after `Data Files`, so
     -- it is asked for by the lesser path and named by the greater.
-    local real = jess.fs.join(root, 'elsewhere', 'Real.esp')
-    jess.fs.createDir(jess.fs.join(root, 'elsewhere'))
-    assert(fs.hardLink(path 'twin.esp', real))
-    assert(fs.symlink(real, path 'Twin.esp'))
+    local real = fs.join(root, 'elsewhere', 'Real.esp')
+    local done, problem = fs.mkdir(fs.join(root, 'elsewhere'), { recursive = true })
+    if not done then error(problem, 0) end
+    local done, problem = fs.hardLink(path 'twin.esp', real)
+    if not done then error(problem, 0) end
+    local done, problem = fs.symlink(real, path 'Twin.esp')
+    if not done then error(problem, 0) end
     expect(order { 'Twin.esp', 'Base.esm', 'twin.esp' }).toEqual { 'Base.esm', 'twin.esp', 'Twin.esp' }
     expect(order { 'twin.esp', 'Twin.esp', 'Base.esm' }).toEqual { 'Base.esm', 'twin.esp', 'Twin.esp' }
 
@@ -371,25 +388,30 @@ suite.describe('the load order', function()
     }
     local options = { gameFiles = true, archives = false, iniPath = iniPath, verbose = true }
     local result = ini.importMaps({}, entries, options)
-    local resolved = assert(fs.canonicalize(root))
+    local resolved, problem = fs.canonicalize(root)
+    if not resolved then error(problem, 0) end
     expect(result.cfg.content).toEqual { 'twin.esp', 'Twin.esp' }
     expect([for event in result.events => event.path]).toEqual {
-      jess.fs.join(resolved, 'elsewhere', 'Real.esp'),
-      jess.fs.join(resolved, 'Data Files', 'twin.esp'),
-      jess.fs.join(resolved, 'Data Files'),
+      fs.join(resolved, 'elsewhere', 'Real.esp'),
+      fs.join(resolved, 'Data Files', 'twin.esp'),
+      fs.join(resolved, 'Data Files'),
     }
   end)
 
   suite.it('and a file found in a folder of the cfg that is a link, by the folder it is a link to', function()
     together('twin.esp', 'Base.esm')
-    if jess.fs.exists(path 'Twin.esp') then return end
+    if fs.exists(path 'Twin.esp') then return end
 
     -- The cfg's folder is searched by its own name, which comes before `Data Files`; the folder
     -- it links to comes after.
-    local real, link = jess.fs.join(root, 'elsewhere'), jess.fs.join(root, 'Aside')
-    jess.fs.createDir(real)
-    assert(fs.hardLink(path 'twin.esp', jess.fs.join(real, 'Twin.esp')))
-    assert(fs.symlink(real, link, { directory = true }))
+    local real, link = fs.join(root, 'elsewhere'), fs.join(root, 'Aside')
+    local done, problem = fs.mkdir(real, { recursive = true })
+    if not done then error(problem, 0) end
+    local done, problem = fs.hardLink(path 'twin.esp', fs.join(real, 'Twin.esp'))
+    if not done then error(problem, 0) end
+    local done, problem = fs.symlink(real, link, { directory = true })
+    if not done then error(problem, 0) end
+
     local entries: ini.MultiMap = {
       ['Game Files:GameFile0'] = { 'Twin.esp' },
       ['Game Files:GameFile1'] = { 'twin.esp' },
@@ -402,7 +424,7 @@ suite.describe('the load order', function()
 end)
 
 suite.describe('readPluginHeader', function()
-  local root = jess.fs.join(scratch, 'openmw-import-morrowind-header')
+  local root = fs.join(scratch, 'openmw-import-morrowind-header')
 
   --- A subrecord: its tag, the length of its bytes, and its bytes.
   local function field(tag: string, data: string): string
@@ -411,8 +433,9 @@ suite.describe('readPluginHeader', function()
 
   --- A file whose TES3 record says it holds `size` bytes, with `rest` after its header.
   local function plugin(name: string, size: number, rest: string): string
-    local path = jess.fs.join(root, name)
-    jess.fs.write(path, 'TES3' .. string.pack('<I4', size) .. string.rep('\0', 8) .. rest)
+    local path = fs.join(root, name)
+    local done, problem = fs.writeFile(path, 'TES3' .. string.pack('<I4', size) .. string.rep('\0', 8) .. rest, { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     return path
   end
 
@@ -442,12 +465,14 @@ suite.describe('readPluginHeader', function()
       return `dream.ini: invalid plugin header in {path}: {reason}`
     end
 
-    local short = jess.fs.join(root, 'Short.esp')
-    jess.fs.write(short, 'TES3')
+    local short = fs.join(root, 'Short.esp')
+    local done, problem = fs.writeFile(short, 'TES3', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     expect(function() ini.readPluginHeader(short) end).toThrow(refusal(short, 'unexpected end of file'))
 
-    local other = jess.fs.join(root, 'Other.esp')
-    jess.fs.write(other, 'TES4' .. string.rep('\0', 12))
+    local other = fs.join(root, 'Other.esp')
+    local done, problem = fs.writeFile(other, 'TES4' .. string.rep('\0', 12), { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     expect(function() ini.readPluginHeader(other) end).toThrow(refusal(other, 'missing TES3 record'))
 
     local cut = plugin('Cut.esp', 100, field('HEDR', 'short'))
@@ -461,23 +486,26 @@ suite.describe('readPluginHeader', function()
     local trailing = plugin('Trailing.esp', #partial, partial)
     expect(function() ini.readPluginHeader(trailing) end).toThrow(refusal(trailing, 'trailing partial subrecord header in TES3 record'))
 
-    local missing = jess.fs.join(root, 'Missing.esp')
+    local missing = fs.join(root, 'Missing.esp')
     expect(function() ini.readPluginHeader(missing) end).toThrow(`dream.ini: {missing}: `)
   end)
 end)
 
 suite.describe('documents and writers', function()
-  local root = jess.fs.join(scratch, 'openmw-import-morrowind-writers')
-  jess.fs.createDir(root)
-  local cfgPath = jess.fs.join(root, 'openmw.cfg')
+  local root = fs.join(scratch, 'openmw-import-morrowind-writers')
+  local done, problem = fs.mkdir(root, { recursive = true })
+  if not done then error(problem, 0) end
+  local cfgPath = fs.join(root, 'openmw.cfg')
 
-  suite.afterEach(function() jess.fs.remove(cfgPath) end)
+  suite.afterEach(function() fs.remove(cfgPath) end)
 
   suite.it('keeps comments, blank lines, and untouched lines where they were', function()
-    jess.fs.write(
+    local done, problem = fs.writeFile(
       cfgPath,
-      '# top\r\n\r\nno-sound=0\r\n# audio\r\nno-sound=0\r\nkey = value # kept\r\nencoding=win1250\r\nencoding=win1251\r\nconfig=sub\r\ndata=Configured\r\n\r\n# tail\r\n# OpenMW-Config Serializer Version: 3.0.0\r\n'
+      '# top\r\n\r\nno-sound=0\r\n# audio\r\nno-sound=0\r\nkey = value # kept\r\nencoding=win1250\r\nencoding=win1251\r\nconfig=sub\r\ndata=Configured\r\n\r\n# tail\r\n# OpenMW-Config Serializer Version: 3.0.0\r\n',
+      { atomic = true, createParents = true }
     )
+    if not done then error(problem, 0) end
     local document = ini.loadDocument(cfgPath)
     ini.applyUpdate(document, {
       cfg = {
@@ -493,10 +521,12 @@ suite.describe('documents and writers', function()
   end)
 
   suite.it('adds a data folder the chain doesn\'t have, and not again as the path it resolved to', function()
-    jess.fs.write(cfgPath, 'encoding=win1252\ndata=old\n')
+    local done, problem = fs.writeFile(cfgPath, 'encoding=win1252\ndata=old\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     local document = ini.loadDocument(cfgPath)
-    local resolved = assert(fs.canonicalize(root))
-    local mods, old = jess.fs.join(resolved, 'mods'), jess.fs.join(resolved, 'old')
+    local resolved, problem = fs.canonicalize(root)
+    if not resolved then error(problem, 0) end
+    local mods, old = fs.join(resolved, 'mods'), fs.join(resolved, 'old')
     ini.applyUpdate(
       document,
       { cfg = { data = { old, 'mods', mods, 'other', mods } }, changedKeys = { 'data' } },
@@ -507,10 +537,12 @@ suite.describe('documents and writers', function()
   end)
 
   suite.it('replaces a singleton in every place it was written, and gates the lists', function()
-    jess.fs.write(
+    local done, problem = fs.writeFile(
       cfgPath,
-      'data-local=a\ncontent=Old.esp\nfallback-archive=Old.bsa\ndata-local=b\nfallback=Old,1\n'
+      'data-local=a\ncontent=Old.esp\nfallback-archive=Old.bsa\ndata-local=b\nfallback=Old,1\n',
+      { atomic = true, createParents = true }
     )
+    if not done then error(problem, 0) end
     local document = ini.loadDocument(cfgPath)
     local result = {
       cfg = {
@@ -528,12 +560,12 @@ suite.describe('documents and writers', function()
 
   suite.it('writes through a temporary file and reports the failure with the path', function()
     ini.saveCfg({ content = { 'A.esp' }, data = { 'Data Files' } }, cfgPath)
-    local written = jess.fs.read(cfgPath) or ''
+    local written = fs.readFileString(cfgPath) or ''
     expect(written).toContain 'content=A.esp\n'
     expect(written).toContain '# OpenMW-Config Serializer Version:'
     ini.saveResolvedCfg({ content = { 'A.esp' } }, cfgPath)
-    expect(jess.fs.read(cfgPath)).toBe 'content=A.esp\n'
-    local missing = jess.fs.join(root, 'nowhere', 'openmw.cfg')
+    expect(fs.readFileString(cfgPath)).toBe 'content=A.esp\n'
+    local missing = fs.join(root, 'nowhere', 'openmw.cfg')
     expect(function() ini.saveCfg({}, missing) end).toThrow(`dream.ini: {missing}: `)
     expect(
       function()
@@ -549,13 +581,14 @@ suite.describe('documents and writers', function()
   suite.it('renders the text each writer writes, without writing it', function()
     local cfg = { content = { 'A.esp' }, data = { 'Data Files' } }
     local rendered = ini.renderCfg(cfg, cfgPath)
-    expect(jess.fs.exists(cfgPath)).toBe(false)
+    expect(fs.exists(cfgPath)).toBe(false)
     expect(rendered).toBe 'content=A.esp\ndata=Data Files\n# OpenMW-Config Serializer Version: 3.0.0\n'
     ini.saveCfg(cfg, cfgPath)
-    expect(jess.fs.read(cfgPath)).toBe(rendered)
+    expect(fs.readFileString(cfgPath)).toBe(rendered)
     expect(function() ini.renderCfg({ fallback = { 'no comma' } }, cfgPath) end).toThrow 'fallback needs Key,Value'
 
-    jess.fs.write(cfgPath, '# kept only where it was written\ndata=mods\n')
+    local done, problem = fs.writeFile(cfgPath, '# kept only where it was written\ndata=mods\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     local document = ini.loadDocument(cfgPath)
     ini.applyUpdate(
       document,
@@ -563,11 +596,13 @@ suite.describe('documents and writers', function()
       {}
     )
     local resolved = ini.renderResolvedDocument(document)
-    local mods = jess.fs.join(assert(fs.canonicalize(root)), 'mods')
+    local canonical, problem = fs.canonicalize(root)
+    if not canonical then error(problem, 0) end
+    local mods = fs.join(canonical, 'mods')
     expect(resolved).toBe(`data={mods}\nno-sound=1\n`)
-    expect(jess.fs.read(cfgPath)).toBe '# kept only where it was written\ndata=mods\n'
+    expect(fs.readFileString(cfgPath)).toBe '# kept only where it was written\ndata=mods\n'
     ini.saveResolvedDocument(document, cfgPath)
-    expect(jess.fs.read(cfgPath)).toBe(resolved)
+    expect(fs.readFileString(cfgPath)).toBe(resolved)
   end)
 end)
 

@@ -12,7 +12,7 @@ local test = require '@jess/test'
 local expect = test.expect
 local suite = test.new()
 local scratch = assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
-local root = jess.fs.join(scratch, 'openmw-import-morrowind-cli')
+local root = fs.join(scratch, 'openmw-import-morrowind-cli')
 
 type Fields = { [string]: unknown }
 
@@ -183,12 +183,13 @@ local Refused: { { argv: { string }, message: string } } = {
 }
 
 --- A path under the case's folder.
-local function at(...: string): string return jess.fs.join(root, ...) end
+local function at(...: string): string return fs.join(root, ...) end
 
 --- A file under the case's folder, its folders made, and its path.
 local function file(text: string, ...: string): string
   local path = at(...)
-  jess.fs.write(path, text)
+  local done, problem = fs.writeFile(path, text, { atomic = true, createParents = true })
+  if not done then error(problem, 0) end
   return path
 end
 
@@ -244,7 +245,8 @@ local Written = result {
 
 suite.beforeEach(function()
   fs.remove(root, { recursive = true })
-  jess.fs.createDir(root)
+  local done, problem = fs.mkdir(root, { recursive = true })
+  if not done then error(problem, 0) end
 end)
 
 suite.describe('parse', function()
@@ -563,24 +565,25 @@ suite.describe('run', function()
     local ini, cfg = file(Audio, 'Morrowind.ini'), file('encoding=win1252\n', 'openmw.cfg')
     expect(cli.run { '--no-archives', '--ini', ini }).toBe(0)
     expect(cli.run { '--no-archives', '--ini', ini, '--cfg', cfg }).toBe(0)
-    expect(jess.fs.read(cfg)).toBe 'encoding=win1252\n'
+    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\n'
     expect(fs.list(root)).toEqual { 'Morrowind.ini', 'openmw.cfg' }
   end)
 
   suite.it('writes the file --output names, and leaves the cfg alone', function()
     local ini, cfg, output = file(Audio, 'Morrowind.ini'), file('# kept\ndata=mods\n', 'openmw.cfg'), at 'out.cfg'
     expect(cli.run { '--no-archives', '--ini', ini, '--cfg', cfg, '--output', output }).toBe(0)
-    expect(jess.fs.read(output)).toBe '# kept\ndata=mods\nencoding=win1252\nno-sound=1\n'
-    expect(jess.fs.read(cfg)).toBe '# kept\ndata=mods\n'
+    expect(fs.readFileString(output)).toBe '# kept\ndata=mods\nencoding=win1252\nno-sound=1\n'
+    expect(fs.readFileString(cfg)).toBe '# kept\ndata=mods\n'
   end)
 
   suite.it('writes the cfg back with --in-place, under either spelling', function()
     local ini, cfg = file(Audio, 'Morrowind.ini'), file('encoding=win1252\n', 'openmw.cfg')
     expect(cli.run { '-w', '--no-archives', '--ini', ini, '--cfg', cfg }).toBe(0)
-    expect(jess.fs.read(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
-    jess.fs.write(cfg, 'encoding=win1250\n')
+    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
+    local done, problem = fs.writeFile(cfg, 'encoding=win1250\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
     expect(cli.run { '--in-place', '-n', '-i', ini, '-c', cfg }).toBe(0)
-    expect(jess.fs.read(cfg)).toBe 'encoding=win1250\nno-sound=1\n'
+    expect(fs.readFileString(cfg)).toBe 'encoding=win1250\nno-sound=1\n'
   end)
 
   suite.it('imports content and archives with its switches, and sets the folders it is given', function()
@@ -592,9 +595,10 @@ suite.describe('run', function()
     file('TES3', 'Data Files', 'Base.esm')
     file('', 'Data Files', 'Morrowind.bsa')
     file('', 'Data Files', 'Tribunal.bsa')
-    local data = assert(fs.canonicalize(at 'Data Files'))
+    local data, problem = fs.canonicalize(at 'Data Files')
+    if not data then error(problem, 0) end
     expect(cli.run { '-gfv', '-i', ini, '-o', output, '-l', 'local', '-r', 'res', '-u', 'saves', '-e', 'win1250' }).toBe(0)
-    expect(jess.fs.read(output)).toBe(
+    expect(fs.readFileString(output)).toBe(
       `content=Base.esm\ndata={data}\ndata-local=local\nencoding=win1250\nfallback=Fonts_Font_0,magic\nfallback-archive=Morrowind.bsa\nfallback-archive=Tribunal.bsa\nresources=res\nuser-data=saves\n# OpenMW-Config Serializer Version: 3.0.0\n`
     )
   end)
@@ -602,9 +606,9 @@ suite.describe('run', function()
   suite.it('reads a cfg\'s path tokens from the roots the command line names', function()
     local ini, cfg = file(Audio, 'Morrowind.ini'), file('user-data=?userdata?\n', 'openmw.cfg')
     expect(cli.run { '-n', '-i', ini, '-c', cfg, '-w' }).toBe(9)
-    expect(jess.fs.read(cfg)).toBe 'user-data=?userdata?\n'
+    expect(fs.readFileString(cfg)).toBe 'user-data=?userdata?\n'
     expect(cli.run { '-n', '-i', ini, '-c', cfg, '-w', '--token-userdata', at 'user' }).toBe(0)
-    expect(jess.fs.read(cfg)).toBe 'user-data=?userdata?\nencoding=win1252\nno-sound=1\n'
+    expect(fs.readFileString(cfg)).toBe 'user-data=?userdata?\nencoding=win1252\nno-sound=1\n'
   end)
 
   suite.it('returns 253 when the INI isn\'t there, and writes nothing', function()
@@ -619,7 +623,7 @@ suite.describe('run', function()
     expect(cli.run { '--ini', ini, '--cfg', cfg, '--in-place', '--encoding', 'bogus' }).toBe(9)
     expect(cli.run { '--ini', ini, '--cfg', cfg, '--in-place' }).toBe(9)
     expect(cli.run { '--ini', ini, '--output', at('nowhere', 'out.cfg'), '-n' }).toBe(9)
-    expect(jess.fs.read(cfg)).toBe ''
+    expect(fs.readFileString(cfg)).toBe ''
     expect(fs.list(root)).toEqual { 'Morrowind.ini', 'openmw.cfg' }
   end)
 end)
