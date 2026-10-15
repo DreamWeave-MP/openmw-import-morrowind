@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- The token roots an options table carries beside its options. dream-ini asks the platform what
 -- `?userdata?` and a cfg's other path tokens stand for; here the caller names each root, the way

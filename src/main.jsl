@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- The `openmw-import-morrowind` command target's entry: the command line's arguments in, the exit
 -- status out.

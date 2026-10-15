@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- The writers: the imported map as a new openmw.cfg, spelled as given or resolved, and a
 -- preserved document written back. Every write goes through a temporary file beside the target

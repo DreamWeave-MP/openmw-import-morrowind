@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- An openmw.cfg kept as its lines, loaded and updated the way dream-ini's `load_cfg_document` and
 -- `apply_preserved_cfg_update` load and update one: a replaced list gives up its old lines' places

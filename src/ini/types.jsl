@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 local configuration = require '@openmw-config'
 local ini = require '@dream-ini'

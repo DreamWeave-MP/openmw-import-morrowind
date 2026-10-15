@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Order is dream-ini 1.0.0's MORROWIND_FALLBACK_KEYS, including the inconsistent weather ordering.
 

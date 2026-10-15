@@ -1,5 +1,4 @@
 --!strict
---!native
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 local importer = require '@self/ini/importer'
 local types = require '@self/ini/types'
