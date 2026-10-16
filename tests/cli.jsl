@@ -353,7 +353,7 @@ suite.describe('parse', function()
       request = { ini = at 'Morrowind.ini', gameFiles = true, archives = false, output = at 'out.cfg' },
     }
     expect(argv).toEqual(before)
-    expect(fs.list(root)).toEqual {}
+    expect((fs.list(root))).toEqual {}
   end)
 
   suite.it('lists the original\'s options in the original\'s order, and what isn\'t here', function()
@@ -393,7 +393,7 @@ suite.describe('parse', function()
 
     expect(cli.Usage).toContain 'the original\'s\nprogram is dream-ini'
     expect(cli.Usage).toContain 'Positional Morrowind.ini/openmw.cfg paths are intentionally unsupported'
-    expect(string.find(cli.Usage, 'openmw-import-morrowind: ', 1, true)).toBe(1)
+    expect((string.find(cli.Usage, 'openmw-import-morrowind: ', 1, true))).toBe(1)
   end)
 end)
 
@@ -567,7 +567,7 @@ suite.describe('run', function()
       expect(cli.run(case.argv)).toBe(8)
     end
 
-    expect(fs.list(root)).toEqual {}
+    expect((fs.list(root))).toEqual {}
   end)
 
   suite.it('previews to standard output and writes nothing', function()
@@ -575,7 +575,7 @@ suite.describe('run', function()
     expect(cli.run { '--no-archives', '--ini', ini }).toBe(0)
     expect(cli.run { '--no-archives', '--ini', ini, '--cfg', cfg }).toBe(0)
     expect(readText(cfg)).toBe 'encoding=win1252\n'
-    expect(fs.list(root)).toEqual { 'Morrowind.ini', 'openmw.cfg' }
+    expect((fs.list(root))).toEqual { 'Morrowind.ini', 'openmw.cfg' }
   end)
 
   suite.it('writes the file --output names, and leaves the cfg alone', function()
@@ -624,7 +624,7 @@ suite.describe('run', function()
     local cfg = at 'openmw.cfg'
     expect(cli.run { '--ini', at 'missing.ini', '--cfg', cfg, '--in-place' }).toBe(253)
     expect(cli.run { '--ini', at 'missing.ini', '--encoding', 'bogus' }).toBe(253)
-    expect(fs.list(root)).toEqual {}
+    expect((fs.list(root))).toEqual {}
   end)
 
   suite.it('returns 9 when the import fails, and writes nothing', function()
@@ -633,7 +633,7 @@ suite.describe('run', function()
     expect(cli.run { '--ini', ini, '--cfg', cfg, '--in-place' }).toBe(9)
     expect(cli.run { '--ini', ini, '--output', at('nowhere', 'out.cfg'), '-n' }).toBe(9)
     expect(readText(cfg)).toBe ''
-    expect(fs.list(root)).toEqual { 'Morrowind.ini', 'openmw.cfg' }
+    expect((fs.list(root))).toEqual { 'Morrowind.ini', 'openmw.cfg' }
   end)
 end)
 

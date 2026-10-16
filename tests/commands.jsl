@@ -380,7 +380,7 @@ suite.describe('a file beside the cfg', function()
     local result = commands.import { ini = ini, cfg = cfg, output = output, archives = false }
     expect(result.outcome).toBe 'written'
     expect(result.cfgMissing).toBe(true)
-    expect(fs.exists(cfg)).toBe(false)
+    expect((fs.exists(cfg))).toBe(false)
     expect(readText(output)).toBe 'encoding=win1252\nno-sound=1\n'
   end)
 
@@ -410,7 +410,7 @@ suite.describe('a file beside the cfg', function()
       stage = 'import',
       message = `openmw-config: {cfg}: token '?userdata?' needs an explicit 'userData' root`,
     }
-    expect(fs.exists(output)).toBe(false)
+    expect((fs.exists(output))).toBe(false)
   end)
 
   suite.it('writes a cfg flattened elsewhere with its tokens as the roots they stand for', function()
@@ -597,7 +597,7 @@ suite.describe('in place', function()
 
     request.inPlace = true
     expect(commands.import(request).outcome).toBe 'written'
-    local first = fs.readFileString(cfg)
+    local first = readText(cfg)
     expect(first).toBe '# The engine\'s resources\nresources=resources\nencoding=win1252\nno-sound=1\n'
     expect(commands.import(request).outcome).toBe 'written'
     expect(readText(cfg)).toBe(first)
@@ -643,7 +643,7 @@ suite.describe('a dry run', function()
     expect(inPlace.text).toBe '# kept\ndata=mods\nencoding=win1252\nno-sound=1\n'
     expect(elsewhere.writer).toBe 'resolved'
     expect(elsewhere.text).toBe(`data={mods}\nencoding=win1252\nno-sound=1\n`)
-    expect(fs.exists(at 'new.cfg')).toBe(false)
+    expect((fs.exists(at 'new.cfg'))).toBe(false)
     expect(names 'output').toEqual {}
     expect(readText(cfg)).toBe '# kept\ndata=mods\n'
   end)
@@ -731,7 +731,7 @@ suite.describe('a run that can\'t finish', function()
     expect(assert(result.failure).message).toContain(`{output}: `)
     expect(result.text).toBe(`encoding=win1252\nno-sound=1\n{Stamp}`)
     expect(result.written).toBeNil()
-    expect(fs.exists(at 'nowhere')).toBe(false)
+    expect((fs.exists(at 'nowhere'))).toBe(false)
   end)
 end)
 

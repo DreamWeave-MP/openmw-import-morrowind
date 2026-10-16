@@ -590,7 +590,7 @@ suite.describe('documents and writers', function()
   suite.it('renders the text each writer writes, without writing it', function()
     local cfg = { content = { 'A.esp' }, data = { 'Data Files' } }
     local rendered = ini.renderCfg(cfg, cfgPath)
-    expect(fs.exists(cfgPath)).toBe(false)
+    expect((fs.exists(cfgPath))).toBe(false)
     expect(rendered).toBe 'content=A.esp\ndata=Data Files\n# OpenMW-Config Serializer Version: 3.0.0\n'
     ini.saveCfg(cfg, cfgPath)
     expect(readText(cfgPath)).toBe(rendered)
