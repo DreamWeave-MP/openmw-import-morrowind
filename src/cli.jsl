@@ -258,9 +258,8 @@ local function parse(argv: { string }): (Command?, string?)
       local flag = Long[name or string.sub(argument, 3)]
       if not flag then return nil, `unknown option '--{name or string.sub(argument, 3)}'` end
 
-      if flag.kind == 'help' or flag.kind == 'version' then
-        return { command = flag.kind :: 'help' | 'version' }, nil
-      end
+      if flag.kind == 'help' then return { command = 'help' }, nil end
+      if flag.kind == 'version' then return { command = 'version' }, nil end
 
       local refusal = take(flag, `--{flag.long}`, attached)
       if refusal then return nil, refusal end
@@ -273,9 +272,8 @@ local function parse(argv: { string }): (Command?, string?)
         local flag = Short[letter]
         if not flag then return nil, `unknown option '-{letter}'` end
 
-        if flag.kind == 'help' or flag.kind == 'version' then
-          return { command = flag.kind :: 'help' | 'version' }, nil
-        end
+        if flag.kind == 'help' then return { command = 'help' }, nil end
+        if flag.kind == 'version' then return { command = 'version' }, nil end
 
         local attached: string? = nil
         if not Bare[flag.kind] then

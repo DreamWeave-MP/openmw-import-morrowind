@@ -159,8 +159,9 @@ suite.describe('the INI\'s numbered entries', function()
   --- The archives an import of `entries` looks for, in the order it looks: none is there, so the
   --- import names every one.
   local function sought(entries: ini.MultiMap): string
+    local options: ini.MapsOptions = { iniPath = iniPath }
     -- `importMaps` raises for the archives it can't find, which is how the list is read here.
-    local found, problem = pcall(ini.importMaps, {}, entries, { iniPath = iniPath })
+    local found, problem = pcall(ini.importMaps, {}, entries, options)
     expect(found).toBe(false)
     return string.match(tostring(problem), 'not found: (.-); searched: ') or tostring(problem)
   end
@@ -258,7 +259,7 @@ suite.describe('the INI\'s numbered entries', function()
       table.insert(expected, name)
     end
 
-    local options = { gameFiles = true, archives = false, iniPath = iniPath }
+    local options: ini.MapsOptions = { gameFiles = true, archives = false, iniPath = iniPath }
     local result = ini.importMaps({}, entries, options)
     local content = table.clone(result.cfg.content)
     table.sort(content)
@@ -325,7 +326,7 @@ suite.describe('the load order', function()
       entries[`Game Files:GameFile{index - 1}`] = { name }
     end
 
-    local options = { gameFiles = true, archives = false, iniPath = iniPath }
+    local options: ini.MapsOptions = { gameFiles = true, archives = false, iniPath = iniPath }
     return ini.importMaps({}, entries, options).cfg.content
   end
 
@@ -395,7 +396,7 @@ suite.describe('the load order', function()
       ['Game Files:GameFile0'] = { 'Twin.esp' },
       ['Game Files:GameFile1'] = { 'twin.esp' },
     }
-    local options = { gameFiles = true, archives = false, iniPath = iniPath, verbose = true }
+    local options: ini.MapsOptions = { gameFiles = true, archives = false, iniPath = iniPath, verbose = true }
     local result = ini.importMaps({}, entries, options)
     local resolved, problem = fs.canonicalize(root)
     if not resolved then error(problem, 0) end
@@ -426,7 +427,7 @@ suite.describe('the load order', function()
       ['Game Files:GameFile1'] = { 'twin.esp' },
       ['Game Files:GameFile2'] = { 'Base.esm' },
     }
-    local options = { gameFiles = true, archives = false, iniPath = iniPath }
+    local options: ini.MapsOptions = { gameFiles = true, archives = false, iniPath = iniPath }
     local result = ini.importMaps({ data = { link } }, entries, options)
     expect(result.cfg.content).toEqual { 'Base.esm', 'twin.esp', 'Twin.esp' }
   end)

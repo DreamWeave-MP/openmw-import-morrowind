@@ -271,12 +271,12 @@ suite.describe('parse', function()
   end)
 
   suite.it('reads the original\'s own argument lists as it does', function()
-    expect(cli.parse { '--ini', 'mw.ini', '--cfg', 'openmw.cfg' }).toEqual {
+    expect((cli.parse { '--ini', 'mw.ini', '--cfg', 'openmw.cfg' })).toEqual {
       command = 'import',
       request = { ini = 'mw.ini', cfg = 'openmw.cfg' },
     }
 
-    expect(cli.parse {
+    expect((cli.parse {
       '--game-files',
       '--fonts',
       '-n',
@@ -296,7 +296,7 @@ suite.describe('parse', function()
       'mw.ini',
       '--cfg',
       'openmw.cfg',
-    }).toEqual {
+    })).toEqual {
       command = 'import',
       request = {
         gameFiles = true,
@@ -313,12 +313,12 @@ suite.describe('parse', function()
       },
     }
 
-    expect(cli.parse { '--ini', 'Morrowind.ini', '--cfg', 'openmw.cfg', '--in-place' }).toEqual {
+    expect((cli.parse { '--ini', 'Morrowind.ini', '--cfg', 'openmw.cfg', '--in-place' })).toEqual {
       command = 'import',
       request = { ini = 'Morrowind.ini', cfg = 'openmw.cfg', inPlace = true },
     }
 
-    expect(cli.parse { '-i', 'Morrowind.ini', '-o', 'out.cfg' }).toEqual {
+    expect((cli.parse { '-i', 'Morrowind.ini', '-o', 'out.cfg' })).toEqual {
       command = 'import',
       request = { ini = 'Morrowind.ini', output = 'out.cfg' },
     }
@@ -331,9 +331,9 @@ suite.describe('parse', function()
       expect(message).toBeNil()
     end
 
-    expect(cli.parse { '--version' }).toEqual { command = 'version' }
-    expect(cli.parse { '-V' }).toEqual { command = 'version' }
-    expect(cli.parse { '-V', '--output' }).toEqual { command = 'version' }
+    expect((cli.parse { '--version' })).toEqual { command = 'version' }
+    expect((cli.parse { '-V' })).toEqual { command = 'version' }
+    expect((cli.parse { '-V', '--output' })).toEqual { command = 'version' }
     expect(select(2, cli.parse { '--bogus', '--help' })).toBe 'unknown option \'--bogus\''
   end)
 
@@ -348,7 +348,7 @@ suite.describe('parse', function()
   suite.it('leaves the argument list as it was, and touches no file', function()
     local argv = { '--ini', at 'Morrowind.ini', '-gno', at 'out.cfg', '--' }
     local before = table.clone(argv)
-    expect(cli.parse(argv)).toEqual {
+    expect((cli.parse(argv))).toEqual {
       command = 'import',
       request = { ini = at 'Morrowind.ini', gameFiles = true, archives = false, output = at 'out.cfg' },
     }

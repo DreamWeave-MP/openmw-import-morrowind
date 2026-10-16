@@ -55,7 +55,13 @@ local LoadName = 'load: the package\'s modules, required for the first time'
 
 --- Whether the filter keeps the workload called `name`.
 local function wanted(name: string): boolean
-  return not only or any[for part in only if string.find(name, part, 1, true) => true]
+  if not only then return true end
+
+  for _, part in only do
+    if string.find(name, part, 1, true) then return true end
+  end
+
+  return false
 end
 
 if filter == 'load' then
@@ -488,7 +494,7 @@ do
   local entries = text.parseIni(installText).entries
   local nowhere = fs.join(root, 'nowhere', 'Morrowind.ini')
   local name = `importMaps: a load order of {ContentFiles}, none of it on disk`
-  local options = { archives = false, gameFiles = true, iniPath = nowhere }
+  local options: importer.MapsOptions = { archives = false, gameFiles = true, iniPath = nowhere }
   local result: importer.Result?
 
   workload(
@@ -570,7 +576,7 @@ commanded(
   plainOrder,
   function(result: commands.Result)
     hold('new', 'the content lines written', lines(result.text, 'content'), ContentFiles)
-    hold('new', 'the data folder written', (result.imported or {}).data[1], plainData)
+    hold('new', 'the data folder written', if result.imported then result.imported.data[1] else nil, plainData)
   end
 )
 
@@ -641,7 +647,7 @@ do
     hold(name, 'the switches', request.gameFiles and request.fonts and request.verbose, true)
     hold(name, 'the output', request.output, 'out.cfg')
     hold(name, 'the resources', request.resources, 'resources')
-    hold(name, 'the last token', (request.tokens or {}).globalPath, '/usr/share/games')
+    hold(name, 'the last token', if request.tokens then request.tokens.globalPath else nil, '/usr/share/games')
   end)
 end
 

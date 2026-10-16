@@ -243,7 +243,7 @@ suite.describe('a preview', function()
       fs.join(data, 'Morrowind.bsa'),
       fs.join(data, 'Extra.bsa'),
     }
-    expect(result.events[1].modified).toBe(fs.stat(at('Data Files', 'Plugin.esp')).modifiedSeconds)
+    expect(result.events[1].modified).toBe(assert((fs.stat(at('Data Files', 'Plugin.esp')))).modifiedSeconds)
     expect(result.events[3].modified).toBeNil()
     expect(assert(result.imported).content).toEqual { 'Base.esm', 'Plugin.esp' }
 
@@ -290,7 +290,7 @@ suite.describe('a file with no cfg', function()
     expect(result.outcome).toBe 'written'
     expect(result.writer).toBe 'new'
     expect(result.target).toBe(output)
-    expect(result.written).toBe(fs.canonicalize(output))
+    expect(result.written).toBe((fs.canonicalize(output)))
     expect(result.text).toBe(text)
     expect(readText(output)).toBe(text)
     expect(names()).toEqual { 'Morrowind.ini', 'out.cfg' }
@@ -559,7 +559,7 @@ suite.describe('in place', function()
     expect(result.outcome).toBe 'written'
     expect(result.writer).toBe 'preserved'
     expect(result.target).toBe(cfg)
-    expect(result.written).toBe(fs.canonicalize(cfg))
+    expect(result.written).toBe((fs.canonicalize(cfg)))
     expect(result.warnings).toEqual {}
     expect(readText(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
     expect(names()).toEqual { 'Morrowind.ini', 'openmw.cfg' }
@@ -581,7 +581,7 @@ suite.describe('in place', function()
     if not done then error(problem, 0) end
     local result = commands.import { ini = ini, cfg = link, inPlace = true, archives = false }
     expect(result.target).toBe(link)
-    expect(result.written).toBe(fs.canonicalize(real))
+    expect(result.written).toBe((fs.canonicalize(real)))
     local value, problem = fs.lstat(link)
     if not value then error(problem, 0) end
     expect(value.isSymlink).toBe(true)

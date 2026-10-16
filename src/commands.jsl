@@ -270,7 +270,7 @@ local function import(given: Request): Result
 
   local anchor = target or cfgPath
   local relocated = if cfgPath and target then not sameContext(cfgPath, target) else false
-  local paths: types.PathsOptions = {
+  local paths = {
     ini = iniPath,
     cfg = cfgPath,
     tokens = tokens,
@@ -285,7 +285,7 @@ local function import(given: Request): Result
     userData = read.userData :: string?,
     dataDirBase = if anchor then contextOf(anchor) else nil,
     writeResolvedDataDirs = relocated,
-  }
+  } :: types.PathsOptions
   local imported: types.Result?
 
   -- `importPaths` raises for a file it can't read, a cfg that isn't one, a content or archive
