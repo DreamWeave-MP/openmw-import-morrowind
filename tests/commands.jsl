@@ -8,6 +8,15 @@ local commands = require '@openmw-import-morrowind/commands'
 local fs = require '@dream/fs'
 local test = require '@jess/test'
 
+--- The text of the file at `path`, raising the read's own message when there is none.
+local function readText(path: string): string
+  local text, problem = fs.readFileString(path)
+  if not text then error(problem, 0) end
+
+  return text
+end
+
+
 local expect = test.expect
 local suite = test.new()
 local scratch = assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
@@ -109,7 +118,7 @@ suite.describe('a request', function()
 
     expect(function() commands.import { ini = ini, cfg = cfg, output = cfg, inPlace = true } end).toThrow 'output and inPlace both say where the result goes'
     expect(function() commands.import { ini = ini, inPlace = true } end).toThrow 'inPlace writes the result back to cfg, which wasn\'t given'
-    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\n'
+    expect(readText(cfg)).toBe 'encoding=win1252\n'
   end)
 end)
 
@@ -157,7 +166,7 @@ suite.describe('a preview', function()
     expect(result.cfgMissing).toBe(false)
     expect(result.text).toBe 'encoding=win1252\nno-sound=1\n'
     expect(result.changedKeys).toEqual { 'no-sound' }
-    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\n'
+    expect(readText(cfg)).toBe 'encoding=win1252\n'
   end)
 
   suite.it('leaves singletons and fallbacks the INI doesn\'t set where they were', function()
@@ -283,7 +292,7 @@ suite.describe('a file with no cfg', function()
     expect(result.target).toBe(output)
     expect(result.written).toBe(fs.canonicalize(output))
     expect(result.text).toBe(text)
-    expect(fs.readFileString(output)).toBe(text)
+    expect(readText(output)).toBe(text)
     expect(names()).toEqual { 'Morrowind.ini', 'out.cfg' }
   end)
 
@@ -291,7 +300,7 @@ suite.describe('a file with no cfg', function()
     local ini, output = file(Audio, 'Morrowind.ini'), file('stale=1\n', 'out.cfg')
     local result = commands.import { ini = ini, output = output, archives = false }
     expect(result.outcome).toBe 'written'
-    expect(fs.readFileString(output)).toBe(`encoding=win1252\nno-sound=1\n{Stamp}`)
+    expect(readText(output)).toBe(`encoding=win1252\nno-sound=1\n{Stamp}`)
     expect(names()).toEqual { 'Morrowind.ini', 'out.cfg' }
   end)
 
@@ -300,7 +309,7 @@ suite.describe('a file with no cfg', function()
     file(plugin(), 'Data Files', 'Base.esm')
     local result = commands.import { ini = ini, output = output, gameFiles = true, archives = false }
     expect(result.outcome).toBe 'written'
-    expect(fs.readFileString(output)).toBe(
+    expect(readText(output)).toBe(
       `content=Base.esm\ndata={folder 'Data Files'}\nencoding=win1252\n{Stamp}`
     )
   end)
@@ -316,7 +325,7 @@ suite.describe('a file with no cfg', function()
         message = 'GameFile entry not found: Missing.esp. Later GameFile entries were not imported.',
       },
     }
-    expect(fs.readFileString(output)).toBe(`encoding=win1252\n{Stamp}`)
+    expect(readText(output)).toBe(`encoding=win1252\n{Stamp}`)
   end)
 
   suite.it('searches an explicit data folder first, and writes it', function()
@@ -331,7 +340,7 @@ suite.describe('a file with no cfg', function()
       dataDirs = { data },
     }
     expect(result.events).toEqual { { kind = 'dataDirAddedForContent', path = fs.canonicalize(data) } }
-    expect(fs.readFileString(output)).toBe(`content=Base.esm\ndata={data}\nencoding=win1252\n{Stamp}`)
+    expect(readText(output)).toBe(`content=Base.esm\ndata={data}\nencoding=win1252\n{Stamp}`)
   end)
 
   suite.it('searches a relative data folder from the file\'s folder, and writes it as given', function()
@@ -345,7 +354,7 @@ suite.describe('a file with no cfg', function()
       dataDirs = { 'relative-data' },
     }
     expect(result.outcome).toBe 'written'
-    expect(fs.readFileString(output)).toBe(
+    expect(readText(output)).toBe(
       `content=Base.esm\ndata=relative-data\nencoding=win1252\n{Stamp}`
     )
   end)
@@ -359,11 +368,11 @@ suite.describe('a file beside the cfg', function()
     local result = commands.import { ini = ini, cfg = cfg, output = output }
     expect(result.outcome).toBe 'written'
     expect(result.writer).toBe 'preserved'
-    expect(fs.readFileString(output)).toBe(
+    expect(readText(output)).toBe(
       `encoding=win1252\nno-sound=1\nfallback=Movies_New_Game,intro.bik\ndata={folder 'Data Files'}\nfallback-archive=Morrowind.bsa\n`
     )
-    expect(fs.readFileString(output)).toBe(result.text)
-    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\n'
+    expect(readText(output)).toBe(result.text)
+    expect(readText(cfg)).toBe 'encoding=win1252\n'
   end)
 
   suite.it('doesn\'t create a cfg that was named and isn\'t there', function()
@@ -372,7 +381,7 @@ suite.describe('a file beside the cfg', function()
     expect(result.outcome).toBe 'written'
     expect(result.cfgMissing).toBe(true)
     expect(fs.exists(cfg)).toBe(false)
-    expect(fs.readFileString(output)).toBe 'encoding=win1252\nno-sound=1\n'
+    expect(readText(output)).toBe 'encoding=win1252\nno-sound=1\n'
   end)
 
   suite.it('keeps comments and the spelling of the paths the cfg has', function()
@@ -389,7 +398,7 @@ suite.describe('a file beside the cfg', function()
       tokens = { userData = at 'user-data' },
     }
     expect(result.writer).toBe 'preserved'
-    expect(fs.readFileString(output)).toBe(`{authored}encoding=win1252\nno-sound=1\n`)
+    expect(readText(output)).toBe(`{authored}encoding=win1252\nno-sound=1\n`)
   end)
 
   suite.it('fails on a path token whose root the request doesn\'t name, saying which', function()
@@ -416,7 +425,7 @@ suite.describe('a file beside the cfg', function()
       tokens = { userData = at 'user', localPath = at 'install' },
     }
     expect(result.writer).toBe 'resolved'
-    expect(fs.readFileString(output)).toBe(
+    expect(readText(output)).toBe(
       `data={at('user', 'mods')}\nencoding=win1252\nno-sound=1\nresources={at('install', 'resources')}\n`
     )
   end)
@@ -434,7 +443,7 @@ suite.describe('a file beside the cfg', function()
       dataDirs = { 'extra-data' },
     }
     expect(result.writer).toBe 'preserved'
-    expect(fs.readFileString(output)).toBe '# existing data stays relative\ndata=mods\nencoding=win1252\ndata=extra-data\ncontent=Base.esm\n'
+    expect(readText(output)).toBe '# existing data stays relative\ndata=mods\nencoding=win1252\ndata=extra-data\ncontent=Base.esm\n'
   end)
 
   suite.it('keeps a config= chain as a chain, not as the settings it brings', function()
@@ -497,7 +506,7 @@ suite.describe('a file beside the cfg', function()
     if not done then error(problem, 0) end
     local result = commands.import { ini = ini, cfg = link, output = output, archives = false }
     expect(result.writer).toBe 'preserved'
-    expect(fs.readFileString(output)).toBe '# preserved through symlink spelling\ndata=mods\nencoding=win1252\nno-sound=1\n'
+    expect(readText(output)).toBe '# preserved through symlink spelling\ndata=mods\nencoding=win1252\nno-sound=1\n'
   end)
 end)
 
@@ -510,8 +519,8 @@ suite.describe('a file in another folder', function()
     local result = commands.import { ini = ini, cfg = cfg, output = output, archives = false }
     expect(result.outcome).toBe 'written'
     expect(result.writer).toBe 'resolved'
-    expect(fs.readFileString(output)).toBe(`data={mods}\nencoding=win1252\nno-sound=1\n`)
-    expect(fs.readFileString(cfg)).toBe '# preserved only in source context\ndata=mods\n'
+    expect(readText(output)).toBe(`data={mods}\nencoding=win1252\nno-sound=1\n`)
+    expect(readText(cfg)).toBe '# preserved only in source context\ndata=mods\n'
   end)
 
   suite.it('doesn\'t write the engine\'s resources/vfs as a data folder', function()
@@ -522,7 +531,7 @@ suite.describe('a file in another folder', function()
     folder 'output'
     local result = commands.import { ini = ini, cfg = cfg, output = output, archives = false }
     expect(result.writer).toBe 'resolved'
-    expect(fs.readFileString(output)).toBe(`encoding=win1252\nno-sound=1\nresources={resources}\n`)
+    expect(readText(output)).toBe(`encoding=win1252\nno-sound=1\nresources={resources}\n`)
   end)
 
   suite.it('writes an explicit data folder as it resolved, searched from the file\'s folder', function()
@@ -539,7 +548,7 @@ suite.describe('a file in another folder', function()
       dataDirs = { 'relative-data' },
     }
     expect(result.writer).toBe 'resolved'
-    expect(fs.readFileString(output)).toBe(`content=Base.esm\ndata={data}\nencoding=win1252\n`)
+    expect(readText(output)).toBe(`content=Base.esm\ndata={data}\nencoding=win1252\n`)
   end)
 end)
 
@@ -552,7 +561,7 @@ suite.describe('in place', function()
     expect(result.target).toBe(cfg)
     expect(result.written).toBe(fs.canonicalize(cfg))
     expect(result.warnings).toEqual {}
-    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
+    expect(readText(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
     expect(names()).toEqual { 'Morrowind.ini', 'openmw.cfg' }
   end)
 
@@ -560,7 +569,7 @@ suite.describe('in place', function()
     local ini, cfg = file(Audio, 'Morrowind.ini'), file('# data stays authored\ndata=mods\n', 'openmw.cfg')
     folder 'mods'
     commands.import { ini = ini, cfg = cfg, inPlace = true, archives = false }
-    expect(fs.readFileString(cfg)).toBe '# data stays authored\ndata=mods\nencoding=win1252\nno-sound=1\n'
+    expect(readText(cfg)).toBe '# data stays authored\ndata=mods\nencoding=win1252\nno-sound=1\n'
   end)
 
   suite.it('writes the file a linked cfg points at, and leaves the link a link', function()
@@ -576,7 +585,7 @@ suite.describe('in place', function()
     local value, problem = fs.lstat(link)
     if not value then error(problem, 0) end
     expect(value.isSymlink).toBe(true)
-    expect(fs.readFileString(real)).toBe '# update the target, not the link\nencoding=win1252\nno-sound=1\n'
+    expect(readText(real)).toBe '# update the target, not the link\nencoding=win1252\nno-sound=1\n'
   end)
 
   suite.it('doesn\'t write the engine\'s resources/vfs as a data folder, however often it runs', function()
@@ -591,7 +600,7 @@ suite.describe('in place', function()
     local first = fs.readFileString(cfg)
     expect(first).toBe '# The engine\'s resources\nresources=resources\nencoding=win1252\nno-sound=1\n'
     expect(commands.import(request).outcome).toBe 'written'
-    expect(fs.readFileString(cfg)).toBe(first)
+    expect(readText(cfg)).toBe(first)
   end)
 
   suite.it('creates a cfg that was named and isn\'t there', function()
@@ -599,7 +608,7 @@ suite.describe('in place', function()
     local result = commands.import { ini = ini, cfg = cfg, inPlace = true, archives = false }
     expect(result.outcome).toBe 'written'
     expect(result.cfgMissing).toBe(true)
-    expect(fs.readFileString(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
+    expect(readText(cfg)).toBe 'encoding=win1252\nno-sound=1\n'
   end)
 end)
 
@@ -636,7 +645,7 @@ suite.describe('a dry run', function()
     expect(elsewhere.text).toBe(`data={mods}\nencoding=win1252\nno-sound=1\n`)
     expect(fs.exists(at 'new.cfg')).toBe(false)
     expect(names 'output').toEqual {}
-    expect(fs.readFileString(cfg)).toBe '# kept\ndata=mods\n'
+    expect(readText(cfg)).toBe '# kept\ndata=mods\n'
   end)
 
   suite.it('writes, the next time, exactly the text it returned', function()
@@ -647,7 +656,7 @@ suite.describe('a dry run', function()
     local written = commands.import(request)
     expect(written.outcome).toBe 'written'
     expect(written.text).toBe(preview.text)
-    expect(fs.readFileString(cfg)).toBe(preview.text)
+    expect(readText(cfg)).toBe(preview.text)
   end)
 end)
 
@@ -682,7 +691,7 @@ suite.describe('a run that can\'t finish', function()
     expect(result.failure).toEqual { stage = 'options', message = 'unsupported encoding: bogus' }
     expect(result.imported).toBeNil()
     expect(result.text).toBeNil()
-    expect(fs.readFileString(cfg)).toBe ''
+    expect(readText(cfg)).toBe ''
   end)
 
   suite.it('fails when an archive can\'t be found, naming where it looked', function()
@@ -697,7 +706,7 @@ suite.describe('a run that can\'t finish', function()
     }
     expect(result.events).toEqual {}
     expect(result.written).toBeNil()
-    expect(fs.readFileString(cfg)).toBe 'data=mods\n'
+    expect(readText(cfg)).toBe 'data=mods\n'
   end)
 
   suite.it('fails on a content entry that is a path, and on an INI it can\'t read', function()

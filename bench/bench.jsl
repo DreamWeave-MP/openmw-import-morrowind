@@ -27,6 +27,15 @@ local loadStart = os.clock()
 local importer = require '@openmw-import-morrowind'
 local commands = require '@openmw-import-morrowind/commands'
 local cli = require '@openmw-import-morrowind/cli'
+
+--- The text of the file at `path`, raising the read's own message when there is none.
+local function readText(path: string): string
+  local text, problem = fs.readFileString(path)
+  if not text then error(problem, 0) end
+
+  return text
+end
+
 local loadSeconds = os.clock() - loadStart
 
 -- A build without the verified toolchain runs Luau slower than a release does, so a number from
@@ -575,7 +584,7 @@ commanded(
     hold('preserved', 'the content lines written', lines(written, 'content'), ContentFiles)
     hold('preserved', 'the first comment, kept', string.sub(written, 1, #cfgLines[1]), cfgLines[1])
     hold('preserved', 'the data lines written', lines(written, 'data'), DataFolders + 1)
-    hold('preserved', 'the cfg, which a dry run leaves alone', fs.readFileString(moddedCfg), cfgText)
+    hold('preserved', 'the cfg, which a dry run leaves alone', readText(moddedCfg), cfgText)
   end
 )
 

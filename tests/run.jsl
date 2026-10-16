@@ -5,6 +5,15 @@ local fs = require '@dream/fs'
 local ini = require '@openmw-import-morrowind'
 local text = require '@dream-ini'
 local test = require '@jess/test'
+
+--- The text of the file at `path`, raising the read's own message when there is none.
+local function readText(path: string): string
+  local text, problem = fs.readFileString(path)
+  if not text then error(problem, 0) end
+
+  return text
+end
+
 local expect = test.expect
 local suite = test.new()
 local scratch = assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
@@ -564,7 +573,7 @@ suite.describe('documents and writers', function()
     expect(written).toContain 'content=A.esp\n'
     expect(written).toContain '# OpenMW-Config Serializer Version:'
     ini.saveResolvedCfg({ content = { 'A.esp' } }, cfgPath)
-    expect(fs.readFileString(cfgPath)).toBe 'content=A.esp\n'
+    expect(readText(cfgPath)).toBe 'content=A.esp\n'
     local missing = fs.join(root, 'nowhere', 'openmw.cfg')
     expect(function() ini.saveCfg({}, missing) end).toThrow(`dream.ini: {missing}: `)
     expect(
@@ -584,7 +593,7 @@ suite.describe('documents and writers', function()
     expect(fs.exists(cfgPath)).toBe(false)
     expect(rendered).toBe 'content=A.esp\ndata=Data Files\n# OpenMW-Config Serializer Version: 3.0.0\n'
     ini.saveCfg(cfg, cfgPath)
-    expect(fs.readFileString(cfgPath)).toBe(rendered)
+    expect(readText(cfgPath)).toBe(rendered)
     expect(function() ini.renderCfg({ fallback = { 'no comma' } }, cfgPath) end).toThrow 'fallback needs Key,Value'
 
     local done, problem = fs.writeFile(cfgPath, '# kept only where it was written\ndata=mods\n', { atomic = true, createParents = true })
@@ -600,9 +609,9 @@ suite.describe('documents and writers', function()
     if not canonical then error(problem, 0) end
     local mods = fs.join(canonical, 'mods')
     expect(resolved).toBe(`data={mods}\nno-sound=1\n`)
-    expect(fs.readFileString(cfgPath)).toBe '# kept only where it was written\ndata=mods\n'
+    expect(readText(cfgPath)).toBe '# kept only where it was written\ndata=mods\n'
     ini.saveResolvedDocument(document, cfgPath)
-    expect(fs.readFileString(cfgPath)).toBe(resolved)
+    expect(readText(cfgPath)).toBe(resolved)
   end)
 end)
 
