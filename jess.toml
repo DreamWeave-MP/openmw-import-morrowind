@@ -10,7 +10,7 @@ tests = ["tests/run.jsl", "tests/commands.jsl", "tests/cli.jsl", "tests/style.js
 
 [dependencies]
 "org.dreamweave.dream-ini" = "0.1"
-"org.dreamweave.openmw-config" = "0.1"
+"org.dreamweave.openmw-config" = "4"
 
 [modules]
 "@openmw-import-morrowind" = "src/init.jsl"
