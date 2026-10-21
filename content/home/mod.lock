@@ -1,0 +1,52 @@
+{
+  "schema_version": "3",
+  "document": "lock",
+  "project": "bd0af2fc-6c77-47e3-9bab-05573cc76588",
+  "note": "Written by CI when a release tag is pushed: what each published release's archive contains. Do not edit.",
+  "releases": [
+    {
+      "version": "0.1.0",
+      "locked_from": "a5257ecf2d7ba326e29f42dcd5dc695a667c65c5",
+      "artifacts": [
+        {
+          "id": "jpk",
+          "format": "jpk",
+          "filename": "org.dreamweave.openmw-import-morrowind-0.1.0.jpk",
+          "media_type": "application/vnd.jess.jpk",
+          "size": 64776,
+          "digests": {
+            "sha256": "c4e08ddf6b4bfc176093a52db0f746088ca0ce4eff37fc8c6cf059f571dd0b3a"
+          },
+          "jess": {
+            "package": "org.dreamweave.openmw-import-morrowind",
+            "jess_api": "1",
+            "content_digest": "fb4ce6d7dec5b466f6ddd7ac7df2d6c5bec156f3d968615d80ee30e128737fec",
+            "dependencies": {
+              "org.dreamweave.dream-ini": "0.1",
+              "org.dreamweave.openmw-config": "4"
+            }
+          }
+        }
+      ],
+      "runtimes": {},
+      "platforms": [],
+      "provides": [],
+      "relationships": [],
+      "components": [
+        {
+          "id": "main",
+          "name": "openmw-import-morrowind",
+          "path": ".",
+          "required": true,
+          "default": true,
+          "requires": [],
+          "conflicts": [],
+          "suggested_with": []
+        }
+      ],
+      "groups": [],
+      "extensions": {},
+      "critical_extensions": []
+    }
+  ]
+}
